@@ -4,7 +4,7 @@ import { queryClientInstance } from '@/lib/query-client'
 import { BrowserRouter as Router, Route, Routes, Link, useLocation, Navigate, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { Button } from '@/components/ui/button';
-import { LogOut, Loader2 } from 'lucide-react';
+import { LogOut, Loader2, LayoutDashboard, Scissors, CalendarDays } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useEffect } from 'react';
 
@@ -37,8 +37,9 @@ const AdminLayout = ({ children }) => {
   };
   
   return (
-    <div className="min-h-screen bg-[#FDF8F2]">
-      <header className="bg-gradient-to-r from-[#4A3721] to-[#8A6D3B] text-white shadow-md">
+    <div className="min-h-screen bg-[#FDF8F2] pb-24 md:pb-8">
+      {/* HEADER SUPERIOR (Notebook e Mobile) */}
+      <header className="bg-gradient-to-r from-[#4A3721] to-[#8A6D3B] text-white shadow-md sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 h-20 flex items-center justify-between">
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-3">
@@ -48,18 +49,47 @@ const AdminLayout = ({ children }) => {
                 <span className="text-[10px] opacity-80 uppercase tracking-[0.2em] font-light">Bronze & Estética</span>
               </div>
             </div>
+            
+            {/* MENU PARA DESKTOP (Fica oculto no celular) */}
             <nav className="hidden md:flex items-center gap-2 ml-4">
               <Link to="/admin/dashboard"><Button variant="ghost" className={`rounded-lg px-6 ${location.pathname.includes('dashboard') ? 'bg-white/20 text-white' : 'text-white/70 hover:bg-white/10'}`}>Dashboard</Button></Link>
               <Link to="/admin/servicos"><Button variant="ghost" className={`rounded-lg px-6 ${location.pathname.includes('servicos') ? 'bg-white/20 text-white' : 'text-white/70 hover:bg-white/10'}`}>Serviços</Button></Link>
               <Link to="/admin/agenda"><Button variant="ghost" className={`rounded-lg px-6 ${location.pathname.includes('agenda') ? 'bg-white/20 text-white' : 'text-white/70 hover:bg-white/10'}`}>Agenda</Button></Link>
             </nav>
           </div>
+          
           <Button onClick={handleLogout} variant="outline" className="bg-white/10 border-white/20 hover:bg-red-500/20 text-white gap-2 rounded-xl">
-            <LogOut className="w-4 h-4" /> Sair
+            <LogOut className="w-4 h-4" /> <span className="hidden sm:inline">Sair</span>
           </Button>
         </div>
       </header>
-      <main className="max-w-7xl mx-auto p-8">{children}</main>
+
+      {/* CONTEÚDO PRINCIPAL */}
+      <main className="max-w-7xl mx-auto p-4 md:p-8">{children}</main>
+
+      {/* NOVO: MENU INFERIOR RESPONSIVO (Só aparece no celular) */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-[#F1E4D1] shadow-[0_-4px_12px_rgba(0,0,0,0.05)] px-6 py-2 flex justify-around items-center z-50">
+        <Link to="/admin/dashboard" className="flex flex-col items-center gap-1 min-w-[60px]">
+          <div className={`p-2 rounded-xl transition-all ${location.pathname.includes('dashboard') ? 'bg-[#FDF8F2] text-[#BF953F]' : 'text-[#8A6D3B]'}`}>
+            <LayoutDashboard className="w-5 h-5" />
+          </div>
+          <span className={`text-[10px] font-bold uppercase tracking-wider ${location.pathname.includes('dashboard') ? 'text-[#BF953F]' : 'text-[#8A6D3B]'}`}>Dash</span>
+        </Link>
+
+        <Link to="/admin/servicos" className="flex flex-col items-center gap-1 min-w-[60px]">
+          <div className={`p-2 rounded-xl transition-all ${location.pathname.includes('servicos') ? 'bg-[#FDF8F2] text-[#BF953F]' : 'text-[#8A6D3B]'}`}>
+            <Scissors className="w-5 h-5" />
+          </div>
+          <span className={`text-[10px] font-bold uppercase tracking-wider ${location.pathname.includes('servicos') ? 'text-[#BF953F]' : 'text-[#8A6D3B]'}`}>Serviços</span>
+        </Link>
+
+        <Link to="/admin/agenda" className="flex flex-col items-center gap-1 min-w-[60px]">
+          <div className={`p-2 rounded-xl transition-all ${location.pathname.includes('agenda') ? 'bg-[#FDF8F2] text-[#BF953F]' : 'text-[#8A6D3B]'}`}>
+            <CalendarDays className="w-5 h-5" />
+          </div>
+          <span className={`text-[10px] font-bold uppercase tracking-wider ${location.pathname.includes('agenda') ? 'text-[#BF953F]' : 'text-[#8A6D3B]'}`}>Agenda</span>
+        </Link>
+      </div>
     </div>
   );
 };
@@ -69,7 +99,6 @@ function AppRoutes() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Se o usuário logou, mas o navigate não funcionou, esse useEffect força a entrada
     if (user && !loading && window.location.pathname === '/login') {
       navigate('/admin/dashboard', { replace: true });
     }
