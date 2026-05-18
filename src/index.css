@@ -1,0 +1,60 @@
+@import "tailwindcss";
+
+@theme {
+  /* Dourado mais vivo e vibrante */
+  --color-primary: #D4AF37; 
+  --color-primary-foreground: #FFFFFF;
+  
+  /* Marrom Café Profundo para o botão "Próximo" e textos importantes */
+  --color-secondary: #4A3721; 
+  --color-secondary-foreground: #FFFFFF;
+  
+  --color-background: hsl(34 60% 98%);
+  --color-foreground: hsl(20 25% 20%);
+  
+  --color-border: #E5D5BC;
+  --color-input: #F1E4D1;
+  --color-ring: #D4AF37;
+
+  --radius-lg: 0.75rem;
+  --radius-md: calc(0.75rem - 2px);
+  --radius-sm: calc(0.75rem - 4px);
+}
+
+@layer base {
+  :root {
+    --background: 34 60% 98%;
+    --foreground: 20 25% 20%;
+    --card: 0 0% 100%;
+    --card-foreground: 20 25% 20%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 20 25% 20%;
+    --primary: 43 69% 52%; /* Corresponde ao #D4AF37 */
+    --primary-foreground: 34 60% 98%;
+    --secondary: 30 37% 21%; /* Corresponde ao #4A3721 */
+    --secondary-foreground: 34 60% 98%;
+    --muted: 34 30% 95%;
+    --muted-foreground: 20 15% 45%;
+    --accent: 43 69% 52%;
+    --accent-foreground: 34 60% 98%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 34 25% 88%;
+    --input: 34 25% 92%;
+    --ring: 43 69% 52%;
+    --radius: 0.75rem;
+  }
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
