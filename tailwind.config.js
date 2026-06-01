@@ -15,7 +15,14 @@ module.exports = {
     },
     extend: {
       colors: {
-        // Cores customizadas para o Bronze & Estética
+        // NOVAS: Cores Dinâmicas e Automatizadas injetadas pelo Supabase por Estúdio
+        studio: {
+          primary: "var(--cor-primaria)",
+          secondary: "var(--cor-secundaria)",
+          bg: "var(--cor-fundo)",
+        },
+
+        // Legado / Compatibilidade: Cores fixas da Andréia
         bronze: {
           light: "#FDF8F2",
           DEFAULT: "#BF953F",
@@ -24,18 +31,18 @@ module.exports = {
         },
         coffee: "#4A3721",
         
-        // Mantendo compatibilidade com Shadcn UI
+        // Mantendo compatibilidade com Shadcn UI e variáveis nativas HSL
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
         primary: {
-          DEFAULT: "hsl(var(--primary))",
+          DEFAULT: "var(--cor-primaria)", // Vincula o botão primário padrão ao banco!
           foreground: "hsl(var(--primary-foreground))",
         },
         secondary: {
-          DEFAULT: "hsl(var(--secondary))",
+          DEFAULT: "var(--cor-secundaria)", // Vincula o botão secundário padrão ao banco!
           foreground: "hsl(var(--secondary-foreground))",
         },
         destructive: {
@@ -47,7 +54,7 @@ module.exports = {
           foreground: "hsl(var(--muted-foreground))",
         },
         accent: {
-          DEFAULT: "hsl(var(--accent))",
+          DEFAULT: "var(--cor-secundaria)",
           foreground: "hsl(var(--accent-foreground))",
         },
         popover: {

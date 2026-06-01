@@ -1,12 +1,12 @@
 import { Toaster } from "@/components/ui/toaster"
+import { TooltipProvider } from "@/components/ui/tooltip"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
-import { BrowserRouter as Router, Route, Routes, Link, useLocation, Navigate, useNavigate } from 'react-router-dom';
-import { AuthProvider, useAuth } from '@/lib/AuthContext';
+import { BrowserRouter as Router, Route, Routes, Link, Navigate, useNavigate, useParams } from 'react-router-dom';
+import { AuthProvider } from '@/lib/AuthContext';
 import { Button } from '@/components/ui/button';
-import { LogOut, Loader2, LayoutDashboard, Scissors, CalendarDays } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { useEffect } from 'react';
 
 import Dashboard from '@/pages/Dashboard';
 import Servicos from '@/pages/Servicos';
@@ -14,112 +14,100 @@ import Agenda from '@/pages/Agenda';
 import Reserva from '@/pages/Reserva';
 import Login from '@/pages/Login'; 
 import PageNotFound from './lib/PageNotFound';
+import ProtectedRoute from '@/components/ProtectedRoute';
+import Header from '@/components/Header';
+import Navigation from '@/components/Navigation';
 
-const ProtectedRoute = ({ children }) => {
-  const { user, loading } = useAuth();
-  if (loading) return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-[#FDF8F2]">
-      <Loader2 className="w-10 h-10 animate-spin text-[#8A6D3B] mb-4" />
-      <div className="text-[#4A3721] font-bold uppercase tracking-widest text-xs">Sincronizando...</div>
-    </div>
-  );
-  if (!user) return <Navigate to="/login" replace />;
-  return children;
-};
+const TEXTO_HOME_DESC = "Plataforma profissional de agendamento e gestão para estúdios de estética e bem-estar.";
 
-const AdminLayout = ({ children }) => {
-  const location = useLocation();
-  const navigate = useNavigate();
-  const handleLogout = async () => {
-    localStorage.removeItem('supabase.auth.token');
-    await supabase.auth.signOut();
-    navigate('/login');
-  };
-  
-  return (
-    <div className="min-h-screen bg-[#FDF8F2] pb-24 md:pb-8">
-      {/* HEADER SUPERIOR (Notebook e Mobile) */}
-      <header className="bg-gradient-to-r from-[#4A3721] to-[#8A6D3B] text-white shadow-md sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 h-20 flex items-center justify-between">
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-3">
-              <img src="/logo.png" alt="Logo" className="w-12 h-12 object-contain" />
-              <div className="flex flex-col text-white">
-                <span className="font-bold text-xl uppercase tracking-tighter leading-none">Andréia Moura</span>
-                <span className="text-[10px] opacity-80 uppercase tracking-[0.2em] font-light">Bronze & Estética</span>
-              </div>
-            </div>
-            
-            {/* MENU PARA DESKTOP (Fica oculto no celular) */}
-            <nav className="hidden md:flex items-center gap-2 ml-4">
-              <Link to="/admin/dashboard"><Button variant="ghost" className={`rounded-lg px-6 ${location.pathname.includes('dashboard') ? 'bg-white/20 text-white' : 'text-white/70 hover:bg-white/10'}`}>Dashboard</Button></Link>
-              <Link to="/admin/servicos"><Button variant="ghost" className={`rounded-lg px-6 ${location.pathname.includes('servicos') ? 'bg-white/20 text-white' : 'text-white/70 hover:bg-white/10'}`}>Serviços</Button></Link>
-              <Link to="/admin/agenda"><Button variant="ghost" className={`rounded-lg px-6 ${location.pathname.includes('agenda') ? 'bg-white/20 text-white' : 'text-white/70 hover:bg-white/10'}`}>Agenda</Button></Link>
-            </nav>
-          </div>
-          
-          <Button onClick={handleLogout} variant="outline" className="bg-white/10 border-white/20 hover:bg-red-500/20 text-white gap-2 rounded-xl">
-            <LogOut className="w-4 h-4" /> <span className="hidden sm:inline">Sair</span>
-          </Button>
-        </div>
-      </header>
-
-      {/* CONTEÚDO PRINCIPAL */}
-      <main className="max-w-7xl mx-auto p-4 md:p-8">{children}</main>
-
-      {/* NOVO: MENU INFERIOR RESPONSIVO (Só aparece no celular) */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-[#F1E4D1] shadow-[0_-4px_12px_rgba(0,0,0,0.05)] px-6 py-2 flex justify-around items-center z-50">
-        <Link to="/admin/dashboard" className="flex flex-col items-center gap-1 min-w-[60px]">
-          <div className={`p-2 rounded-xl transition-all ${location.pathname.includes('dashboard') ? 'bg-[#FDF8F2] text-[#BF953F]' : 'text-[#8A6D3B]'}`}>
-            <LayoutDashboard className="w-5 h-5" />
-          </div>
-          <span className={`text-[10px] font-bold uppercase tracking-wider ${location.pathname.includes('dashboard') ? 'text-[#BF953F]' : 'text-[#8A6D3B]'}`}>Dash</span>
-        </Link>
-
-        <Link to="/admin/servicos" className="flex flex-col items-center gap-1 min-w-[60px]">
-          <div className={`p-2 rounded-xl transition-all ${location.pathname.includes('servicos') ? 'bg-[#FDF8F2] text-[#BF953F]' : 'text-[#8A6D3B]'}`}>
-            <Scissors className="w-5 h-5" />
-          </div>
-          <span className={`text-[10px] font-bold uppercase tracking-wider ${location.pathname.includes('servicos') ? 'text-[#BF953F]' : 'text-[#8A6D3B]'}`}>Serviços</span>
-        </Link>
-
-        <Link to="/admin/agenda" className="flex flex-col items-center gap-1 min-w-[60px]">
-          <div className={`p-2 rounded-xl transition-all ${location.pathname.includes('agenda') ? 'bg-[#FDF8F2] text-[#BF953F]' : 'text-[#8A6D3B]'}`}>
-            <CalendarDays className="w-5 h-5" />
-          </div>
-          <span className={`text-[10px] font-bold uppercase tracking-wider ${location.pathname.includes('agenda') ? 'text-[#BF953F]' : 'text-[#8A6D3B]'}`}>Agenda</span>
-        </Link>
-      </div>
-    </div>
-  );
-};
-
-function AppRoutes() {
-  const { user, loading } = useAuth();
-  const navigate = useNavigate();
+function ThemeProvider({ children }) {
+  const { slug } = useParams();
+  const [estiloCustomizado, setEstiloCustomizado] = useState(null);
 
   useEffect(() => {
-    if (user && !loading && window.location.pathname === '/login') {
-      navigate('/admin/dashboard', { replace: true });
-    }
-  }, [user, loading, navigate]);
+    const carregarBrandingEstudio = async () => {
+      if (!slug) return;
+      const { data, error } = await supabase
+        .from('estabelecimentos')
+        .select('cor_primaria, cor_secundaria, cor_fundo')
+        .eq('slug', slug)
+        .single();
+
+      if (!error && data) {
+        setEstiloCustomizado({
+          '--cor-primaria': data.cor_primaria || '#1E293B',
+          '--cor-secundaria': data.cor_secundaria || '#0EA5E9',
+          '--cor-fundo': data.cor_fundo || '#F8FAFC',
+        });
+      }
+    };
+    carregarBrandingEstudio();
+  }, [slug]);
+
+  return (
+    <div style={estiloCustomizado || {
+      '--cor-primaria': '#1E293B',
+      '--cor-secundaria': '#0EA5E9',
+      '--cor-fundo': '#F8FAFC',
+    }} className="min-h-screen flex flex-col w-full">
+      {children}
+    </div>
+  );
+}
+
+function AdminLayout({ children }) {
+  return (
+    <ThemeProvider>
+      <div className="min-h-screen bg-slate-50 pb-24 md:pb-8 flex flex-col w-full text-slate-800 antialiased">
+        <Header />
+        <Navigation />
+        <main className="flex-1 p-4 md:p-8 max-w-7xl mx-auto w-full">
+          {children}
+        </main>
+      </div>
+    </ThemeProvider>
+  );
+}
+
+function AppRoutes() {
+  const navigate = useNavigate();
 
   return (
     <Routes>
-      <Route path="/" element={<Reserva />} />
-      <Route path="/login" element={<Login onLoginSuccess={() => navigate('/admin/dashboard')} />} />
-      <Route path="/admin/*" element={
-        <ProtectedRoute>
-          <AdminLayout>
-            <Routes>
-              <Route path="dashboard" element={<Dashboard />} />
-              <Route path="servicos" element={<Servicos />} />
-              <Route path="agenda" element={<Agenda />} />
-              <Route path="*" element={<Navigate to="dashboard" replace />} />
-            </Routes>
-          </AdminLayout>
+      <Route path="/:slug" element={<ThemeProvider><Reserva /></ThemeProvider>} />
+      <Route path="/:slug/login" element={<ThemeProvider><Login onLoginSuccess={(u, currentSlug) => navigate(`/admin/${currentSlug || 'studio-demo'}/dashboard`, { replace: true })} /></ThemeProvider>} />
+      <Route path="/login" element={<Login onLoginSuccess={(u, currentSlug) => navigate(`/admin/${currentSlug || 'studio-demo'}/dashboard`, { replace: true })} />} />
+      
+      <Route path="/admin/:slug/dashboard" element={
+        <ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />}>
+          <AdminLayout><Dashboard /></AdminLayout>
         </ProtectedRoute>
       } />
+
+      <Route path="/admin/:slug/servicos" element={
+        <ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />}>
+          <AdminLayout><Servicos /></AdminLayout>
+        </ProtectedRoute>
+      } />
+
+      <Route path="/admin/:slug/agenda" element={
+        <ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />}>
+          <AdminLayout><Agenda /></AdminLayout>
+        </ProtectedRoute>
+      } />
+
+      <Route path="/admin/:slug/*" element={<Navigate to="dashboard" replace />} />
+      
+      <Route path="/" element={
+        <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-4 text-center">
+          <h1 className="text-3xl font-bold text-slate-900 mb-2">Zello Agenda</h1>
+          <p className="text-slate-600 max-w-sm mb-6">{TEXTO_HOME_DESC}</p>
+          <Link to="/studio-demo/login">
+            <Button className="bg-slate-900 hover:bg-slate-800 text-white px-6 py-2 rounded-xl transition-colors">Acessar Painel Demo</Button>
+          </Link>
+        </div>
+      } />
+
       <Route path="*" element={<PageNotFound />} />
     </Routes>
   );
@@ -129,10 +117,12 @@ export default function App() {
   return (
     <AuthProvider>
       <QueryClientProvider client={queryClientInstance}>
-        <Router>
-          <AppRoutes />
-        </Router>
-        <Toaster />
+        <TooltipProvider>
+          <Router>
+            <AppRoutes />
+          </Router>
+          <Toaster />
+        </TooltipProvider>
       </QueryClientProvider>
     </AuthProvider>
   );

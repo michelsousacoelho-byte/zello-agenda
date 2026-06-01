@@ -1,510 +1,921 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { format, parseISO } from 'date-fns';
+import { format, startOfWeek, endOfWeek, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { 
-  Calendar as CalendarIcon, Clock, Phone, Plus, Tag, User, Users, 
-  ChevronDown, History, X, Search, Filter, Trophy, Star, Medal, Crown, 
-  DollarSign, Trash2, CheckCircle 
+import {
+  Clock, Phone, Tag, Search, Calendar, Edit2, User,
+  Plus, AlertCircle, TrendingUp, X, Trophy, Users, Star, Trash2,
+  Upload, Loader2
 } from 'lucide-react';
 import { useToast } from "@/components/ui/use-toast";
+import Papa from 'papaparse';
+
+// ─── Novo componente de histórico ─────────────────────────────────────────────
+import ClienteHistoricoSheet from '@/pages/ClienteHistorico';
 
 export default function SistemaGestao() {
+  const { slug } = useParams();
+  const [estabelecimento, setEstabelecimento] = useState(null);
   const [abaAtiva, setAbaAtiva] = useState('agenda');
   const [agendamentos, setAgendamentos] = useState([]);
   const [clientes, setClientes] = useState([]);
   const [servicos, setServicos] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [editandoId, setEditandoId] = useState(null);
-  const [clienteExpandido, setClienteExpandido] = useState(null);
-  const [mostrarNovoCliente, setMostrarNovoCliente] = useState(false);
-  const [sugestoesClientes, setSugestoesClientes] = useState([]);
-  
-  // ESTADOS DE FILTRO
-  const [filtroData, setFiltroData] = useState('');
-  const [buscaAgenda, setBuscaAgenda] = useState('');
-  const [buscaCliente, setBuscaCliente] = useState('');
-  const [anoFidelidade, setAnoFidelidade] = useState(new Date().getFullYear().toString());
-  
-  const dateInputRef = useRef(null); 
   const { toast } = useToast();
 
-  const [form, setForm] = useState({
-    cliente_nome: '',
-    cliente_telefone: '',
-    data_hora: '',
-    valor_total: '',
+  const [tipoFiltroData, setTipoFiltroData] = useState('dia');
+  const [filtroData, setFiltroData] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [buscaCliente, setBuscaCliente] = useState('');
+
+  const [termoBuscaClienteForm, setTermoBuscaClienteForm] = useState('');
+  const [mostrarDropdownClientes, setMostrarDropdownClientes] = useState(false);
+  const dropdownRef = useRef(null);
+
+  const [modoEdicao, setModoEdicao] = useState(false);
+  const [idAgendamentoEditando, setIdAgendamentoEditando] = useState(null);
+  const [formAgendamento, setFormAgendamento] = useState({
+    cliente_id: '',
+    nome_cliente_manual: '',
+    telefone: '',
     servico_id: '',
-    status: 'Pendente'
+    hora: '08:00',
+    valor: '',
+    status: 'Confirmado'
   });
 
-  const [novoCliente, setNovoCliente] = useState({ nome: '', telefone: '' });
+  const [modoEdicaoCliente, setModoEdicaoCliente] = useState(false);
+  const [idClienteEditando, setIdClienteEditando] = useState(null);
+  const [formCliente, setFormCliente] = useState({ nome: '', telefone: '' });
+
+  // ── Estado do Sheet de Histórico ─────────────────────────────────────────
+  const [sheetAberto, setSheetAberto] = useState(false);
+  const [clienteSelecionado, setClienteSelecionado] = useState(null);
+
+  // ── Estado da Importação CSV ─────────────────────────────────────────────
+  const [importando, setImportando] = useState(false);
+  const inputCsvRef = useRef(null);
+
+  // ── Busca na aba de Clientes Cadastrados ─────────────────────────────────
+  const [buscaClientesCadastrados, setBuscaClientesCadastrados] = useState('');
 
   useEffect(() => {
-    buscarDados();
-  }, [abaAtiva]);
+    function handleClickFora(event) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setMostrarDropdownClientes(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickFora);
+    return () => document.removeEventListener("mousedown", handleClickFora);
+  }, []);
 
-  const aplicarMascaraTelefone = (valor) => {
-    if (!valor) return "";
-    valor = valor.replace(/\D/g, "");
-    valor = valor.replace(/^(\d{2})(\d)/g, "($1) $2");
-    valor = valor.replace(/(\d{5})(\d)/, "$1-$2");
-    return valor.substring(0, 15);
+  useEffect(() => {
+    carregarDadosComponente();
+  }, [slug, filtroData, tipoFiltroData]);
+
+  const formatarTelefone = (valor) => {
+    if (!valor) return '';
+    const apenasNumeros = valor.replace(/\D/g, '');
+    if (apenasNumeros.length <= 2) return apenasNumeros.replace(/^(\d{0,2})/, '($1');
+    if (apenasNumeros.length <= 6) return apenasNumeros.replace(/^(\d{2})(\d{0,4})/, '($1) $2');
+    if (apenasNumeros.length <= 10) return apenasNumeros.replace(/^(\d{2})(\d{4})(\d{0,4})/, '($1) $2-$3');
+    return apenasNumeros.substring(0, 11).replace(/^(\d{2})(\d{5})(\d{4})/, '($1) $2-$3');
   };
 
-  const aplicarMascaraMoeda = (valor) => {
-    if (!valor) return "";
-    let v = valor.replace(/\D/g, '');
-    v = (Number(v) / 100).toLocaleString('pt-BR', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    });
-    return v;
-  };
-
-  const buscarDados = async () => {
-    setLoading(true);
+  const carregarDadosComponente = async () => {
     try {
-      const { data: sData } = await supabase.from('servicos').select('*');
-      const { data: aData, error: aError } = await supabase.from('agendamentos').select('*').order('data_hora', { ascending: false });
+      setLoading(true);
+      const currentSlug = slug || 'studio-demo';
 
-      if (aError) throw aError;
+      const { data: est } = await supabase
+        .from('estabelecimentos')
+        .select('*')
+        .eq('slug', currentSlug)
+        .maybeSingle();
 
-      const formatados = (aData || []).map(agenda => ({
-        ...agenda,
-        nome_procedimento: sData?.find(s => s.id.toString() === agenda.servico_id?.toString())?.nome || 'Lançamento Direto'
-      }));
+      if (est) {
+        setEstabelecimento(est);
 
-      setAgendamentos(formatados);
-      setServicos(sData || []);
+        let query = supabase
+          .from('agendamentos')
+          .select('*, clientes(*), servicos(*)')
+          .eq('estabelecimento_id', est.id);
 
-      const mapaClientes = {};
-      formatados.forEach(item => {
-        const nome = item.cliente_nome || 'Sem Nome';
-        if (!mapaClientes[nome]) {
-          mapaClientes[nome] = { nome: nome, telefone: item.cliente_telefone, totalGasto: 0, visitas: [] };
+        if (tipoFiltroData === 'dia') {
+          query = query.gte('data_hora', `${filtroData}T00:00:00`).lte('data_hora', `${filtroData}T23:59:59`);
+        } else if (tipoFiltroData === 'semana') {
+          const dataAtual = parseISO(filtroData);
+          const inicio = format(startOfWeek(dataAtual, { weekStartsOn: 0 }), 'yyyy-MM-dd');
+          const fim = format(endOfWeek(dataAtual, { weekStartsOn: 0 }), 'yyyy-MM-dd');
+          query = query.gte('data_hora', `${inicio}T00:00:00`).lte('data_hora', `${fim}T23:59:59`);
+        } else {
+          const dataAtual = parseISO(filtroData);
+          const anoMes = format(dataAtual, 'yyyy-MM');
+          const inicioMes = `${anoMes}-01`;
+          const ultimoDia = new Date(dataAtual.getFullYear(), dataAtual.getMonth() + 1, 0).getDate();
+          const fimMes = `${anoMes}-${String(ultimoDia).padStart(2, '0')}`;
+          query = query.gte('data_hora', `${inicioMes}T00:00:00`).lte('data_hora', `${fimMes}T23:59:59`);
         }
-        
-        // CORREÇÃO CRÍTICA DE FATURAMENTO: 
-        // Só soma na receita se o atendimento estiver de fato Concluído ou Confirmado.
-        // Se estiver Pendente, Falta ou Cancelado, NÃO entra no saldo do cliente.
-        if (item.status === 'Concluído' || item.status === 'Confirmado' || item.status === 'Realizado') {
-          mapaClientes[nome].totalGasto += Number(item.valor_total || 0);
-        }
-        
-        mapaClientes[nome].visitas.push(item);
-      });
-      setClientes(Object.values(mapaClientes).sort((a, b) => a.nome.localeCompare(b.nome)));
-    } catch (e) { console.error(e); }
-    setLoading(false);
-  };
 
-  const mostrarAviso = (titulo, desc, variante = "default") => {
-    toast({ title: titulo, description: desc, variant: variante });
-  };
+        const { data: ag } = await query.order('data_hora', { ascending: true });
+        setAgendamentos(ag || []);
 
-  const selecionarClienteExistente = (cliente) => {
-    setForm({ ...form, cliente_nome: cliente.nome, cliente_telefone: cliente.telefone || '' });
-    setSugestoesClientes([]);
-  };
+        const { data: cl } = await supabase
+          .from('clientes')
+          .select('*')
+          .eq('estabelecimento_id', est.id)
+          .order('nome', { ascending: true });
+        setClientes(cl || []);
 
-  const handleNomeChange = (valor) => {
-    setForm({ ...form, cliente_nome: valor });
-    if (valor.length > 1) {
-      const filtrados = clientes.filter(c => c.nome.toLowerCase().includes(valor.toLowerCase()));
-      setSugestoesClientes(filtrados);
-    } else {
-      setSugestoesClientes([]);
-    }
-  };
-
-  const salvarAgendamento = async (e) => {
-    e.preventDefault();
-
-    if (editandoId && !window.confirm("Deseja salvar as alterações neste agendamento?")) return;
-
-    if (form.servico_id && form.data_hora) {
-      const servicoSelecionado = servicos.find(s => s.id.toString() === form.servico_id.toString());
-      const limiteMaximo = servicoSelecionado?.capacidade_simultanea || 1;
-
-      const agendamentosConcorrentes = agendamentos.filter(a => 
-        a.status !== 'Cadastro Base' &&
-        a.status !== 'Cancelado' &&
-        a.status !== 'Falta' &&
-        a.servico_id?.toString() === form.servico_id.toString() &&
-        a.data_hora.slice(0, 16) === form.data_hora.slice(0, 16) &&
-        a.id !== editandoId
-      );
-
-      if (form.status !== 'Cancelado' && form.status !== 'Falta' && agendamentosConcorrentes.length >= limiteMaximo) {
-        mostrarAviso(
-          "Horário Esgotado", 
-          `O serviço "${servicoSelecionado.nome}" já atingiu o limite de ${limiteMaximo} atendimentos simultâneos para este horário.`, 
-          "destructive"
-        );
-        return;
+        const { data: sv } = await supabase
+          .from('servicos')
+          .select('*')
+          .eq('estabelecimento_id', est.id);
+        setServicos(sv || []);
       }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
     }
+  };
 
-    const valorParaSalvar = typeof form.valor_total === 'string' 
-      ? parseFloat(form.valor_total.replace(/\./g, '').replace(',', '.')) 
-      : form.valor_total;
+  // ── Handlers de Agendamento ──────────────────────────────────────────────
+  const handleServicoChange = (id) => {
+    const servicoSelecionado = servicos.find(s => s.id === id);
+    setFormAgendamento(prev => ({
+      ...prev,
+      servico_id: id,
+      valor: servicoSelecionado ? servicoSelecionado.preco : ''
+    }));
+  };
 
-    const payload = {
-      cliente_nome: form.cliente_nome,
-      cliente_telefone: form.cliente_telefone,
-      data_hora: form.data_hora,
-      valor_total: valorParaSalvar || 0,
-      servico_id: form.servico_id ? parseInt(form.servico_id) : null,
-      status: form.status
+  const selecionarClienteDaBusca = (cliente) => {
+    setFormAgendamento(prev => ({
+      ...prev,
+      cliente_id: cliente.id,
+      nome_cliente_manual: cliente.nome,
+      telefone: formatarTelefone(cliente.telefone || '')
+    }));
+    setTermoBuscaClienteForm(cliente.nome);
+    setMostrarDropdownClientes(false);
+  };
+
+  const handleDigitacaoCliente = (valor) => {
+    setTermoBuscaClienteForm(valor);
+    setMostrarDropdownClientes(true);
+    setFormAgendamento(prev => ({
+      ...prev,
+      nome_cliente_manual: valor,
+      cliente_id: prev.nome_cliente_manual === valor ? prev.cliente_id : ''
+    }));
+  };
+
+  const handleSalvarAgendamento = async (e) => {
+    e.preventDefault();
+    if (!formAgendamento.nome_cliente_manual.trim()) return;
+    if (!formAgendamento.servico_id) return;
+
+    const dataHoraIso = `${filtroData}T${formAgendamento.hora}:00`;
+
+    try {
+      let finalClienteId = formAgendamento.cliente_id;
+
+      if (!finalClienteId) {
+        const { data: novoCliente, error: errCliente } = await supabase
+          .from('clientes')
+          .insert([{
+            estabelecimento_id: estabelecimento.id,
+            nome: formAgendamento.nome_cliente_manual.trim(),
+            telefone: formAgendamento.telefone.replace(/\D/g, '')
+          }])
+          .select()
+          .single();
+
+        if (errCliente) throw errCliente;
+        finalClienteId = novoCliente.id;
+      }
+
+      if (modoEdicao) {
+        const { error } = await supabase
+          .from('agendamentos')
+          .update({
+            cliente_id: finalClienteId,
+            servico_id: formAgendamento.servico_id,
+            data_hora: dataHoraIso,
+            status: formAgendamento.status
+          })
+          .eq('id', idAgendamentoEditando);
+
+        if (error) throw error;
+        toast({ title: "Sucesso!", description: "Agendamento atualizado." });
+      } else {
+        const { error } = await supabase
+          .from('agendamentos')
+          .insert([{
+            estabelecimento_id: estabelecimento.id,
+            cliente_id: finalClienteId,
+            servico_id: formAgendamento.servico_id,
+            data_hora: dataHoraIso,
+            status: formAgendamento.status
+          }]);
+
+        if (error) throw error;
+        toast({ title: "Sucesso!", description: "Agendamento realizado." });
+      }
+
+      limparFormAgendamento();
+      carregarDadosComponente();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const iniciarEdicao = (ag) => {
+    const horaExtraida = ag.data_hora ? ag.data_hora.split('T')[1]?.substring(0, 5) : '08:00';
+    setModoEdicao(true);
+    setIdAgendamentoEditando(ag.id);
+    setTermoBuscaClienteForm(ag.clientes?.nome || '');
+    setFormAgendamento({
+      cliente_id: ag.cliente_id || '',
+      nome_cliente_manual: ag.clientes?.nome || '',
+      telefone: formatarTelefone(ag.clientes?.telefone || ''),
+      servico_id: ag.servico_id || '',
+      hora: horaExtraida,
+      valor: ag.servicos?.preco || '',
+      status: ag.status || 'Confirmado'
+    });
+  };
+
+  const limparFormAgendamento = () => {
+    setModoEdicao(false);
+    setIdAgendamentoEditando(null);
+    setTermoBuscaClienteForm('');
+    setFormAgendamento({
+      cliente_id: '',
+      nome_cliente_manual: '',
+      telefone: '',
+      servico_id: '',
+      hora: '08:00',
+      valor: '',
+      status: 'Confirmado'
+    });
+  };
+
+  // ── Handlers de Cliente ──────────────────────────────────────────────────
+  const handleSalvarCliente = async (e) => {
+    e.preventDefault();
+    if (!formCliente.nome.trim()) return;
+
+    try {
+      if (modoEdicaoCliente) {
+        const { error } = await supabase
+          .from('clientes')
+          .update({
+            nome: formCliente.nome.trim(),
+            telefone: formCliente.telefone.replace(/\D/g, '')
+          })
+          .eq('id', idClienteEditando);
+
+        if (error) throw error;
+        toast({ title: "Sucesso!", description: "Cadastro da cliente atualizado." });
+      } else {
+        const { error } = await supabase
+          .from('clientes')
+          .insert([{
+            estabelecimento_id: estabelecimento.id,
+            nome: formCliente.nome.trim(),
+            telefone: formCliente.telefone.replace(/\D/g, '')
+          }]);
+
+        if (error) throw error;
+        toast({ title: "Sucesso!", description: "Nova cliente cadastrada." });
+      }
+
+      limparFormCliente();
+      carregarDadosComponente();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const iniciarEdicaoCliente = (cliente) => {
+    setModoEdicaoCliente(true);
+    setIdClienteEditando(cliente.id);
+    setFormCliente({
+      nome: cliente.nome,
+      telefone: formatarTelefone(cliente.telefone || '')
+    });
+  };
+
+  const limparFormCliente = () => {
+    setModoEdicaoCliente(false);
+    setIdClienteEditando(null);
+    setFormCliente({ nome: '', telefone: '' });
+  };
+
+  const handleExcluirCliente = async (id, nome) => {
+    const confirmar = window.confirm(`Deseja remover ${nome}?`);
+    if (!confirmar) return;
+
+    try {
+      const { error } = await supabase.from('clientes').delete().eq('id', id);
+      if (error) throw error;
+      carregarDadosComponente();
+    } catch (err) {
+      alert("Não é possível remover cliente com histórico de agendamentos.");
+    }
+  };
+
+  // ── Abrir Sheet de Histórico ─────────────────────────────────────────────
+  const abrirHistoricoCliente = (cliente) => {
+    setClienteSelecionado(cliente);
+    setSheetAberto(true);
+  };
+
+  // ── Importação de Clientes via CSV ───────────────────────────────────────
+  const handleImportarCSV = (e) => {
+    const arquivo = e.target.files?.[0];
+    if (!arquivo) return;
+
+    // Limpa o input para permitir re-upload do mesmo arquivo
+    e.target.value = '';
+
+    Papa.parse(arquivo, {
+      header: true,
+      skipEmptyLines: true,
+      complete: async (resultado) => {
+        const linhas = resultado.data;
+
+        if (!linhas || linhas.length === 0) {
+          toast({
+            title: "Arquivo vazio",
+            description: "O CSV não contém dados para importar.",
+            variant: "destructive"
+          });
+          return;
+        }
+
+        // Detecta colunas flexivelmente (case-insensitive)
+        const primeiraLinha = linhas[0];
+        const chaves = Object.keys(primeiraLinha);
+
+        const encontrarChave = (candidatos) =>
+          chaves.find(k => candidatos.includes(k.toLowerCase().trim()));
+
+        const chaveNome = encontrarChave(['nome', 'name', 'cliente', 'client']);
+        const chaveTelefone = encontrarChave(['telefone', 'phone', 'tel', 'celular', 'whatsapp']);
+
+        if (!chaveNome) {
+          toast({
+            title: "Formato inválido",
+            description: "O CSV precisa de uma coluna 'nome' ou 'name'.",
+            variant: "destructive"
+          });
+          return;
+        }
+
+        setImportando(true);
+
+        try {
+          // Monta batch de inserção ignorando linhas sem nome
+          const registros = linhas
+            .filter(linha => linha[chaveNome]?.trim())
+            .map(linha => ({
+              estabelecimento_id: estabelecimento.id,
+              nome: linha[chaveNome].trim(),
+              telefone: chaveTelefone
+                ? (linha[chaveTelefone] || '').replace(/\D/g, '').substring(0, 11)
+                : ''
+            }));
+
+          if (registros.length === 0) {
+            toast({
+              title: "Nenhum registro válido",
+              description: "Verifique se a coluna 'nome' está preenchida.",
+              variant: "destructive"
+            });
+            return;
+          }
+
+          // Insere em lote (batch) no Supabase
+          const { error } = await supabase
+            .from('clientes')
+            .insert(registros);
+
+          if (error) throw error;
+
+          toast({
+            title: "Importação concluída! 🎉",
+            description: `${registros.length} cliente(s) importado(s) com sucesso.`
+          });
+
+          carregarDadosComponente();
+        } catch (err) {
+          console.error('Erro na importação:', err);
+          toast({
+            title: "Erro na importação",
+            description: err.message || "Verifique o arquivo e tente novamente.",
+            variant: "destructive"
+          });
+        } finally {
+          setImportando(false);
+        }
+      },
+      error: (err) => {
+        toast({
+          title: "Erro ao ler o CSV",
+          description: err.message || "Arquivo inválido ou corrompido.",
+          variant: "destructive"
+        });
+      }
+    });
+  };
+
+  // ── Ranking ──────────────────────────────────────────────────────────────
+  const [todosAgendamentos, setTodosAgendamentos] = useState([]);
+
+  useEffect(() => {
+    const carregarTodosAgendamentos = async () => {
+      if (!estabelecimento) return;
+      const { data } = await supabase
+        .from('agendamentos')
+        .select('*, clientes(*), servicos(*)')
+        .eq('estabelecimento_id', estabelecimento.id);
+      setTodosAgendamentos(data || []);
     };
+    carregarTodosAgendamentos();
+  }, [estabelecimento]);
 
-    const { error } = editandoId 
-      ? await supabase.from('agendamentos').update(payload).eq('id', editandoId)
-      : await supabase.from('agendamentos').insert([{ ...payload, status: payload.status || 'Confirmado' }]);
+  const processarRankingClientes = () => {
+    const mapaRanking = {};
+    todosAgendamentos.forEach(ag => {
+      const nomeCliente = ag.clientes?.nome || 'Cliente Eventual';
+      const valorProcedimento = Number(ag.servicos?.preco || 0);
+      const statusNorm = ag.status?.toLowerCase();
 
-    if (!error) {
-      mostrarAviso("Sucesso", editandoId ? "Alterações salvas." : "Agendamento realizado.");
-      setEditandoId(null);
-      setForm({ cliente_nome: '', cliente_telefone: '', data_hora: '', valor_total: '', servico_id: '', status: 'Pendente' });
-      setSugestoesClientes([]);
-      buscarDados();
-    }
-  };
-
-  const excluirAgendamento = async (e, id) => {
-    e.stopPropagation(); 
-    if (window.confirm("⚠️ ATENÇÃO: Tem certeza que deseja excluir este agendamento?")) {
-      const { error } = await supabase.from('agendamentos').delete().eq('id', id);
-      if (!error) {
-        mostrarAviso("Excluído", "Registro removido com sucesso.");
-        buscarDados();
+      if (!mapaRanking[nomeCliente]) {
+        mapaRanking[nomeCliente] = {
+          nome: nomeCliente,
+          visitas: 0,
+          totalGasto: 0,
+          telefone: formatarTelefone(ag.clientes?.telefone || ''),
+          clienteObj: ag.clientes || null
+        };
       }
+
+      if (statusNorm !== 'cancelado' && statusNorm !== 'falta') {
+        mapaRanking[nomeCliente].visitas += 1;
+      }
+      if (statusNorm === 'concluído' || statusNorm === 'concluido') {
+        mapaRanking[nomeCliente].totalGasto += valorProcedimento;
+      }
+    });
+    return Object.values(mapaRanking).sort((a, b) => b.totalGasto - a.totalGasto);
+  };
+
+  const obterCorStatus = (status) => {
+    switch (status?.toLowerCase()) {
+      case 'concluído': case 'concluido': return 'bg-emerald-500/10 text-emerald-600 border-emerald-200';
+      case 'confirmado': return 'bg-sky-500/10 text-sky-600 border-sky-200';
+      case 'pendente': return 'bg-amber-500/10 text-amber-600 border-amber-200';
+      case 'cancelado': return 'bg-rose-500/10 text-rose-600 border-rose-200';
+      case 'falta': return 'bg-purple-500/10 text-purple-600 border-purple-200';
+      default: return 'bg-slate-500/10 text-slate-600 border-slate-200';
     }
   };
 
-  const cadastrarApenasCliente = async (e) => {
-    e.preventDefault();
-    const { error } = await supabase.from('agendamentos').insert([{
-      cliente_nome: novoCliente.nome,
-      cliente_telefone: aplicarMascaraTelefone(novoCliente.telefone),
-      status: 'Cadastro Base',
-      valor_total: 0,
-      data_hora: new Date().toISOString()
-    }]);
+  const receitaConfirmadaEmCaixa = agendamentos
+    .filter(ag => ag.status?.toLowerCase() === 'concluído' || ag.status?.toLowerCase() === 'concluido')
+    .reduce((acc, curr) => acc + Number(curr.servicos?.preco || 0), 0);
 
-    if (!error) {
-      mostrarAviso("Cliente Cadastrada", "Base de dados atualizada.");
-      setNovoCliente({ nome: '', telefone: '' });
-      setMostrarNovoCliente(false);
-      buscarDados();
-    }
-  };
+  const receitaPrevitaPeriodo = agendamentos
+    .filter(ag => ag.status?.toLowerCase() === 'confirmado' || ag.status?.toLowerCase() === 'pendente')
+    .reduce((acc, curr) => acc + Number(curr.servicos?.preco || 0), 0);
 
-  const agendamentosFiltrados = agendamentos.filter(a => {
-    if (a.status === 'Cadastro Base') return false;
-    const atendeData = filtroData ? a.data_hora.split('T')[0] === filtroData : true;
-    const atendeNome = buscaAgenda ? a.cliente_nome.toLowerCase().includes(buscaAgenda.toLowerCase()) : true;
-    return atendeData && atendeNome;
+  const agendamentosFiltrados = agendamentos.filter(ag => {
+    const nomeCliente = (ag.clientes?.nome || '').toLowerCase();
+    return nomeCliente.includes(buscaCliente.toLowerCase());
   });
 
-  const clientesFiltrados = clientes.filter(c => 
-    c.nome.toLowerCase().includes(buscaCliente.toLowerCase())
+  const clientesFiltradosDropdown = clientes.filter(c =>
+    c.nome.toLowerCase().includes(termoBuscaClienteForm.toLowerCase())
   );
 
-  const rankingFidelidade = clientes.map(c => {
-    // Apenas atendimentos concluídos ou confirmados entram para a contagem de estrelas/fidelidade do ano
-    const visitasNoAno = c.visitas.filter(v => 
-      v.status !== 'Cadastro Base' && 
-      v.status !== 'Cancelado' && 
-      v.status !== 'Falta' &&
-      v.status !== 'Pendente' &&
-      v.data_hora.startsWith(anoFidelidade)
-    ).length;
-    
-    const gastoNoAno = c.visitas
-      .filter(v => v.status !== 'Cadastro Base' && v.status !== 'Cancelado' && v.status !== 'Falta' && v.status !== 'Pendente' && v.data_hora.startsWith(anoFidelidade))
-      .reduce((acc, curr) => acc + Number(curr.valor_total || 0), 0);
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[50vh]">
+        <div className="w-8 h-8 border-4 border-slate-200 border-t-slate-800 rounded-full animate-spin"></div>
+      </div>
+    );
+  }
 
-    return { ...c, visitasNoAno, gastoNoAno };
-  }).filter(c => c.visitasNoAno > 0)
-    .sort((a, b) => b.visitasNoAno - a.visitasNoAno || b.gastoNoAno - a.gastoNoAno);
+  // ── Formulário reutilizável para o Sheet ─────────────────────────────────
+  const FormularioAgendamento = (
+    <form onSubmit={handleSalvarAgendamento} className="space-y-3">
+      <div className="space-y-1 relative" ref={dropdownRef}>
+        <label className="text-[10px] font-black uppercase text-slate-500">Nome da Cliente *</label>
+        <div className="relative">
+          <Input
+            placeholder="Digite para buscar..."
+            value={termoBuscaClienteForm}
+            onChange={(e) => handleDigitacaoCliente(e.target.value)}
+            onFocus={() => setMostrarDropdownClientes(true)}
+            className="rounded-xl border-slate-300 h-10 text-xs font-bold text-slate-900 bg-white placeholder:text-slate-400 pr-8"
+            required
+          />
+          {formAgendamento.cliente_id && (
+            <span className="absolute right-3 top-3 text-[9px] bg-emerald-100 text-emerald-700 font-bold px-1.5 py-0.5 rounded-md uppercase">Vinculada</span>
+          )}
+        </div>
+        {mostrarDropdownClientes && termoBuscaClienteForm.trim().length > 0 && (
+          <div className="absolute z-50 w-full bg-white mt-1 border border-slate-200 rounded-xl shadow-xl max-h-48 overflow-y-auto divide-y divide-slate-100">
+            {clientesFiltradosDropdown.length > 0 ? (
+              clientesFiltradosDropdown.map(c => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => selecionarClienteDaBusca(c)}
+                  className="w-full text-left px-4 py-2.5 text-xs hover:bg-slate-50 font-medium text-slate-800 flex justify-between items-center"
+                >
+                  <span>{c.nome}</span>
+                  <span className="text-[10px] text-slate-400">{formatarTelefone(c.telefone)}</span>
+                </button>
+              ))
+            ) : (
+              <div className="px-4 py-3 text-xs text-slate-400 italic bg-slate-50">
+                Cliente nova. O sistema criará uma ficha automaticamente.
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      <div className="space-y-1">
+        <label className="text-[10px] font-black uppercase text-slate-500">Telefone de Contato</label>
+        <Input placeholder="(00) 00000-0000" value={formAgendamento.telefone} onChange={(e) => setFormAgendamento({ ...formAgendamento, telefone: formatarTelefone(e.target.value) })} className="rounded-xl border-slate-300 h-10 text-xs text-slate-900 bg-white placeholder:text-slate-400" />
+      </div>
+      <div className="space-y-1">
+        <label className="text-[10px] font-black uppercase text-slate-500">Procedimento *</label>
+        <select value={formAgendamento.servico_id} onChange={(e) => handleServicoChange(e.target.value)} className="w-full h-10 px-3 rounded-xl border border-slate-300 text-xs bg-white text-slate-900 font-bold focus:outline-none" required>
+          <option value="">Selecione o serviço...</option>
+          {servicos.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+        </select>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1">
+          <label className="text-[10px] font-black uppercase text-slate-500">Horário *</label>
+          <Input type="time" value={formAgendamento.hora} onChange={(e) => setFormAgendamento({ ...formAgendamento, hora: e.target.value })} className="rounded-xl border-slate-300 h-10 text-xs font-bold text-slate-900 bg-white" required />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[10px] font-black uppercase text-slate-500">Valor (R$)</label>
+          <Input type="number" placeholder="0" value={formAgendamento.valor} readOnly className="rounded-xl border-slate-200 h-10 text-xs font-bold text-slate-400 bg-slate-50 cursor-not-allowed" />
+        </div>
+      </div>
+      <div className="space-y-1">
+        <label className="text-[10px] font-black uppercase text-slate-500">Status do Atendimento</label>
+        <select value={formAgendamento.status} onChange={(e) => setFormAgendamento({ ...formAgendamento, status: e.target.value })} className="w-full h-10 px-3 rounded-xl border border-slate-300 text-xs font-black text-slate-800 bg-white">
+          <option value="Pendente">Pendente</option>
+          <option value="Confirmado">Confirmado</option>
+          <option value="Concluído">Concluído</option>
+          <option value="Cancelado">Cancelado</option>
+          <option value="Falta">Falta</option>
+        </select>
+      </div>
+      <button type="submit" className="w-full h-10 bg-slate-900 text-white hover:bg-slate-800 font-bold text-xs rounded-xl shadow-md uppercase mt-3 transition-colors block">
+        {modoEdicao ? 'Salvar Alterações' : 'Confirmar na Agenda'}
+      </button>
+    </form>
+  );
 
-  // --- LOGICA DO CARD RECEITA REAL DA AGENDA ---
-  // Calcula dinamicamente o valor total com base nos agendamentos da lista atual (filtrados ou do dia)
-  const receitaRealFiltro = agendamentosFiltrados
-    .filter(item => item.status === 'Concluído' || item.status === 'Realizado')
-    .reduce((acc, curr) => acc + Number(curr.valor_total || 0), 0);
-
-  const receitaPrevistaFiltro = agendamentosFiltrados
-    .filter(item => item.status === 'Confirmado' || item.status === 'Pendente')
-    .reduce((acc, curr) => acc + Number(curr.valor_total || 0), 0);
-
+  // ── Render ───────────────────────────────────────────────────────────────
   return (
-    <div className="max-w-6xl mx-auto p-4 md:p-8 space-y-6 animate-in fade-in duration-500">
-      <header className="flex flex-col md:flex-row justify-between items-center bg-[#4A3721] p-6 rounded-3xl text-white shadow-xl gap-4">
-        <div>
-          <h1 className="text-2xl font-black uppercase tracking-tight">Andréia Moura</h1>
-          <p className="text-[#BF953F] text-[10px] font-bold uppercase tracking-[0.2em]">Bronze & Estética</p>
+    <div className="space-y-6">
+
+      {/* ── Sheet de Histórico do Cliente ── */}
+      <ClienteHistoricoSheet
+        aberto={sheetAberto}
+        onFechar={() => { setSheetAberto(false); setClienteSelecionado(null); }}
+        cliente={clienteSelecionado}
+        formularioAgendamento={FormularioAgendamento}
+      />
+
+      {/* ── Input CSV oculto ── */}
+      <input
+        ref={inputCsvRef}
+        type="file"
+        accept=".csv,text/csv"
+        className="hidden"
+        onChange={handleImportarCSV}
+      />
+
+      {/* ── Tabs ── */}
+      <div className="flex border-b border-slate-200 gap-2 flex-wrap">
+        <button onClick={() => setAbaAtiva('agenda')} className={`pb-3 px-4 text-xs font-black uppercase tracking-wider transition-all border-b-2 ${abaAtiva === 'agenda' ? 'border-slate-800 text-slate-800' : 'border-transparent text-slate-400'}`}>
+          <div className="flex items-center gap-2"><Calendar className="w-4 h-4" /> Controle da Agenda</div>
+        </button>
+        <button onClick={() => setAbaAtiva('clientes')} className={`pb-3 px-4 text-xs font-black uppercase tracking-wider transition-all border-b-2 ${abaAtiva === 'clientes' ? 'border-slate-800 text-slate-800' : 'border-transparent text-slate-400'}`}>
+          <div className="flex items-center gap-2"><Users className="w-4 h-4" /> Clientes Cadastrados</div>
+        </button>
+        <button onClick={() => setAbaAtiva('ranking')} className={`pb-3 px-4 text-xs font-black uppercase tracking-wider transition-all border-b-2 ${abaAtiva === 'ranking' ? 'border-slate-800 text-slate-800' : 'border-transparent text-slate-400'}`}>
+          <div className="flex items-center gap-2"><Trophy className="w-4 h-4" /> Ranking de Fidelidade</div>
+        </button>
+
+        {/* ── Botão Importar CSV ── */}
+        <div className="ml-auto pb-2 flex items-center">
+          <button
+            type="button"
+            disabled={importando}
+            onClick={() => inputCsvRef.current?.click()}
+            className="flex items-center gap-1.5 h-8 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 text-[10px] font-black uppercase tracking-wider transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {importando
+              ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Importando...</>
+              : <><Upload className="w-3.5 h-3.5" /> Importar Clientes</>
+            }
+          </button>
         </div>
-        <div className="flex flex-wrap justify-center gap-2 bg-white/10 p-1 rounded-xl w-full md:w-auto">
-          <Button variant={abaAtiva === 'agenda' ? 'secondary' : 'ghost'} onClick={() => setAbaAtiva('agenda')} className="h-9 text-xs font-bold uppercase text-white">Agenda</Button>
-          <Button variant={abaAtiva === 'clientes' ? 'secondary' : 'ghost'} onClick={() => setAbaAtiva('clientes')} className="h-9 text-xs font-bold uppercase text-white">Clientes</Button>
-          <Button variant={abaAtiva === 'fidelidade' ? 'secondary' : 'ghost'} onClick={() => setAbaAtiva('fidelidade')} className="h-9 text-xs font-bold uppercase text-white flex gap-2">
-            <Trophy className="w-3 h-3" /> Ranking
-          </Button>
+      </div>
+
+      {/* ── Aba: Agenda ── */}
+      {abaAtiva === 'agenda' && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Card className="border-none shadow-sm bg-gradient-to-br from-emerald-600 to-emerald-800 text-white rounded-2xl">
+            <CardContent className="p-5 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-white/70">Faturamento em Caixa</p>
+                <h3 className="text-2xl font-black mt-1">R$ {receitaConfirmadaEmCaixa.toFixed(2)}</h3>
+                <p className="text-[10px] text-white/50 mt-1">Status: Concluídos</p>
+              </div>
+              <div className="p-3 bg-white/10 rounded-xl text-white"><TrendingUp className="w-5 h-5" /></div>
+            </CardContent>
+          </Card>
+          <Card className="border border-slate-200 shadow-sm bg-white rounded-2xl">
+            <CardContent className="p-5 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Receita Prevista</p>
+                <h3 className="text-2xl font-black text-slate-800 mt-1">R$ {receitaPrevitaPeriodo.toFixed(2)}</h3>
+                <p className="text-[10px] text-slate-500 mt-1">Status: Confirmados + Pendentes</p>
+              </div>
+              <div className="p-3 bg-sky-50 text-sky-600 rounded-xl"><Clock className="w-5 h-5" /></div>
+            </CardContent>
+          </Card>
+          <Card className="border border-slate-200 shadow-sm bg-white rounded-2xl">
+            <CardContent className="p-5 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Atendimentos no Período</p>
+                <h3 className="text-2xl font-black text-slate-800 mt-1">{agendamentosFiltrados.length}</h3>
+                <p className="text-[10px] text-slate-500 mt-1">Compromissos agendados</p>
+              </div>
+              <div className="p-3 bg-slate-50 text-slate-600 rounded-xl"><Calendar className="w-5 h-5" /></div>
+            </CardContent>
+          </Card>
         </div>
-      </header>
+      )}
 
       {abaAtiva === 'agenda' && (
         <>
-          <Card className="border-none shadow-sm rounded-2xl overflow-visible bg-white relative z-50">
-            <CardHeader className="bg-[#FDF8F2] border-b border-[#F1E4D1]">
-              <CardTitle className="text-sm font-bold uppercase text-[#4A3721] flex items-center gap-2">
-                {editandoId ? <History className="w-4 h-4 text-[#BF953F]" /> : <Plus className="w-4 h-4 text-[#BF953F]" />}
-                {editandoId ? 'Editar / Atualizar Atendimento' : 'Novo Agendamento'}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-6">
-              <form onSubmit={salvarAgendamento} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4 items-end">
-                <div className="space-y-1 relative">
-                  <label className="text-[10px] font-black uppercase text-[#8A6D3B]">Nome Cliente</label>
-                  <div className="relative">
-                    <Input value={form.cliente_nome} onChange={e => handleNomeChange(e.target.value)} required className="rounded-lg border-[#F1E4D1] h-11 bg-white pr-8" placeholder="Buscar..." />
-                    <Search className="w-4 h-4 absolute right-3 top-3.5 text-[#BF953F] opacity-50" />
-                  </div>
-                  {sugestoesClientes.length > 0 && (
-                    <div className="absolute top-full left-0 w-full bg-white border border-[#F1E4D1] shadow-2xl rounded-lg mt-1 overflow-hidden z-[100] max-h-48 overflow-y-auto">
-                      {sugestoesClientes.map((c, i) => (
-                        <div key={i} onClick={() => selecionarClienteExistente(c)} className="p-3 text-sm hover:bg-[#FDF8F2] cursor-pointer border-b border-[#FDF8F2] last:border-0 flex flex-col">
-                          <span className="font-bold text-[#4A3721]">{c.nome}</span>
-                          <span className="text-[10px] text-[#8A6D3B]">{c.telefone || 'Sem telefone'}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase text-[#8A6D3B]">Telefone</label>
-                  <Input 
-                    value={form.cliente_telefone} 
-                    onChange={e => setForm({...form, cliente_telefone: aplicarMascaraTelefone(e.target.value)})} 
-                    placeholder="(00) 00000-0000" 
-                    className="rounded-lg border-[#F1E4D1] h-11 bg-white" 
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase text-[#8A6D3B]">Procedimento</label>
-                  <select 
-                    value={form.servico_id} 
-                    onChange={e => { 
-                      const s = servicos.find(x => x.id.toString() === e.target.value); 
-                      setForm({...form, servico_id: e.target.value, valor_total: s ? s.preco.toString() : form.valor_total}); 
-                    }} 
-                    className="w-full h-11 rounded-lg border border-[#F1E4D1] text-sm px-3 outline-none bg-white"
-                  >
-                    <option value="">Selecione...</option>
-                    {servicos.map(s => <option key={s.id} value={s.id}>{s.nome} {s.capacidade_simultanea > 1 ? `(Max: ${s.capacidade_simultanea})` : ''}</option>)}
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase text-[#8A6D3B]">Data/Hora</label>
-                  <div className="relative flex items-center">
-                    <input ref={dateInputRef} type="datetime-local" value={form.data_hora} onChange={e => setForm({...form, data_hora: e.target.value})} required className="flex w-full rounded-lg border border-[#F1E4D1] bg-white px-3 h-11 text-sm outline-none" />
-                    <button type="button" onClick={() => dateInputRef.current?.showPicker()} className="absolute right-2 p-1 text-[#BF953F]"><CalendarIcon className="w-4 h-4" /></button>
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase text-[#8A6D3B]">Valor (R$)</label>
-                  <Input 
-                    value={form.valor_total} 
-                    onChange={e => setForm({...form, valor_total: aplicarMascaraMoeda(e.target.value)})} 
-                    placeholder="0,00" 
-                    className="rounded-lg border-[#F1E4D1] h-11 bg-white" 
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase text-[#8A6D3B]">Status</label>
-                  <select 
-                    value={form.status || 'Pendente'} 
-                    onChange={e => setForm({...form, status: e.target.value})} 
-                    className="w-full h-11 rounded-lg border border-[#F1E4D1] text-sm px-3 font-bold outline-none bg-white text-[#4A3721]"
-                  >
-                    <option value="Pendente">⏳ Pendente</option>
-                    <option value="Confirmado">✅ Confirmado</option>
-                    <option value="Concluído">💙 Concluído</option>
-                    <option value="Falta">❌ Falta</option>
-                    <option value="Cancelado">🚫 Cancelado</option>
-                  </select>
-                </div>
-                <div className="flex gap-2">
-                  <Button type="submit" className="flex-1 bg-[#4A3721] hover:bg-[#2D2114] text-white font-bold h-11 rounded-lg uppercase text-[10px]">{editandoId ? 'Atualizar' : 'Confirmar'}</Button>
-                  {editandoId && (<Button onClick={() => {setEditandoId(null); setForm({cliente_nome:'', cliente_telefone:'', data_hora:'', valor_total:'', servico_id:'', status: 'Pendente'})}} variant="outline" className="h-11 rounded-lg border-red-200 text-red-500"><X className="w-4 h-4"/></Button>)}
-                </div>
-              </form>
-            </CardContent>
+          <Card className="border-none shadow-sm bg-white rounded-2xl p-4 flex flex-col md:flex-row gap-4 items-center justify-between">
+            <div className="flex items-center gap-2 w-full md:w-auto flex-wrap">
+              <button type="button" onClick={() => setTipoFiltroData('dia')} className={`h-9 rounded-xl text-xs font-bold px-4 transition-all block ${tipoFiltroData === 'dia' ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-200 text-slate-800 hover:bg-slate-300 border border-slate-400'}`}>Visão Diária</button>
+              <button type="button" onClick={() => setTipoFiltroData('semana')} className={`h-9 rounded-xl text-xs font-bold px-4 transition-all block ${tipoFiltroData === 'semana' ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-200 text-slate-800 hover:bg-slate-300 border border-slate-400'}`}>Visão Semanal</button>
+              <button type="button" onClick={() => setTipoFiltroData('mes')} className={`h-9 rounded-xl text-xs font-bold px-4 transition-all block ${tipoFiltroData === 'mes' ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-200 text-slate-800 hover:bg-slate-300 border border-slate-400'}`}>Visão Mensal</button>
+              <Input type="date" value={filtroData} onChange={(e) => setFiltroData(e.target.value)} className="w-40 h-9 rounded-xl border-slate-300 text-xs font-bold text-slate-900 bg-white" />
+            </div>
+            <div className="relative w-full md:w-80">
+              <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+              <Input placeholder="Buscar por nome do cliente..." value={buscaCliente} onChange={(e) => setBuscaCliente(e.target.value)} className="pl-9 h-9 rounded-xl border-slate-300 text-xs text-slate-900 bg-white placeholder:text-slate-400" />
+            </div>
           </Card>
 
-          {/* NOVO PAINEL DE VISÃO DE CAIXA REAL (Sincronizado com os Filtros da Agenda) */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="bg-gradient-to-br from-emerald-50 to-white p-4 rounded-2xl border border-emerald-100 shadow-sm flex items-center justify-between">
-              <div>
-                <p className="text-[10px] font-black uppercase text-emerald-700 tracking-wider">Receita Confirmada (Em Caixa)</p>
-                <h3 className="text-2xl font-black text-emerald-900 mt-1">R$ {receitaRealFiltro.toFixed(2)}</h3>
-              </div>
-              <div className="bg-emerald-500 text-white p-3 rounded-xl"><DollarSign className="w-5 h-5" /></div>
-            </div>
-            <div className="bg-gradient-to-br from-amber-50 to-white p-4 rounded-2xl border border-amber-100 shadow-sm flex items-center justify-between">
-              <div>
-                <p className="text-[10px] font-black uppercase text-amber-700 tracking-wider">Receita Prevista (Agenda Ativa)</p>
-                <h3 className="text-2xl font-black text-amber-900 mt-1">R$ {receitaPrevistaFiltro.toFixed(2)}</h3>
-              </div>
-              <div className="bg-amber-500 text-white p-3 rounded-xl"><Clock className="w-5 h-5" /></div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-[#FDF8F2] p-4 rounded-2xl border border-[#F1E4D1]">
-            <div className="flex items-center gap-3 bg-white p-2 px-4 rounded-xl border border-[#F1E4D1]"><Search className="w-4 h-4 text-[#BF953F]" /><input type="text" placeholder="Buscar na agenda..." value={buscaAgenda} onChange={(e) => setBuscaAgenda(e.target.value)} className="w-full bg-transparent text-xs font-bold outline-none text-[#4A3721] placeholder:text-[#8A6D3B]/50" />{buscaAgenda && <X onClick={() => setBuscaAgenda('')} className="w-4 h-4 text-red-400 cursor-pointer" />}</div>
-            <div className="flex items-center gap-3 bg-white p-2 px-4 rounded-xl border border-[#F1E4D1]"><CalendarIcon className="w-4 h-4 text-[#BF953F]" /><input type="date" value={filtroData} onChange={(e) => setFiltroData(e.target.value)} className="w-full bg-transparent text-xs font-bold outline-none text-[#4A3721]" />{filtroData && <X onClick={() => setFiltroData('')} className="w-4 h-4 text-red-400 cursor-pointer" />}</div>
-          </div>
-
-          <div className="grid gap-3 relative z-10">
-            {agendamentosFiltrados.length > 0 ? (
-              agendamentosFiltrados.map((item) => (
-                <Card key={item.id} onClick={() => { setEditandoId(item.id); setForm({ ...item, data_hora: item.data_hora.slice(0,16), servico_id: item.servico_id?.toString() || '', valor_total: item.valor_total.toString().replace('.', ','), status: item.status || 'Pendente' }); window.scrollTo({top:0, behavior:'smooth'}); }} className="border-none shadow-sm hover:shadow-md cursor-pointer transition-all bg-white rounded-xl border-l-4 border-transparent hover:border-[#BF953F] group">
-                  <CardContent className="p-4 flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className="bg-[#FDF8F2] p-3 rounded-xl text-[#BF953F]"><CalendarIcon className="w-5 h-5" /></div>
-                      <div>
-                        <h3 className="font-bold text-[#4A3721] uppercase text-sm">{item.cliente_nome}</h3>
-                        <div className="flex flex-wrap gap-3 text-[10px] font-bold text-[#8A6D3B] mt-1">
-                          <span className="flex items-center gap-1"><Tag className="w-3 h-3" /> {item.nome_procedimento}</span>
-                          <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {format(parseISO(item.data_hora), "dd/MM 'às' HH:mm", { locale: ptBR })}</span>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 space-y-3">
+              <Card className="border-none shadow-sm rounded-2xl bg-white">
+                <CardContent className="p-6 space-y-3">
+                  {agendamentosFiltrados.length > 0 ? (
+                    agendamentosFiltrados.map((ag) => (
+                      <div key={ag.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100 hover:shadow-sm transition-all gap-4">
+                        <div className="flex items-start sm:items-center gap-3">
+                          <div className="p-2.5 bg-slate-900 text-white font-black text-xs rounded-xl flex flex-col items-center min-w-[65px]">
+                            <span className="text-[10px] opacity-70 font-medium">{ag.data_hora ? format(parseISO(ag.data_hora), 'dd/MM', { locale: ptBR }) : '--/--'}</span>
+                            <div className="flex items-center gap-1 mt-0.5">
+                              <Clock className="w-3 h-3 text-amber-400" />
+                              {ag.data_hora ? ag.data_hora.split('T')[1]?.substring(0, 5) : '--:--'}
+                            </div>
+                          </div>
+                          {/* ── Nome clicável → abre Sheet ── */}
+                          <div>
+                            <button
+                              type="button"
+                              onClick={() => ag.clientes && abrirHistoricoCliente(ag.clientes)}
+                              className="text-sm font-black text-slate-800 hover:text-slate-600 hover:underline underline-offset-2 text-left transition-colors"
+                            >
+                              {ag.clientes?.nome || 'Cliente Eventual'}
+                            </button>
+                            <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-[11px] font-bold text-slate-500 uppercase">
+                              <span className="flex items-center gap-1"><Phone className="w-3 h-3 text-slate-400" /> {formatarTelefone(ag.clientes?.telefone || '') || 'Sem telefone'}</span>
+                              <span className="flex items-center gap-1"><Tag className="w-3 h-3 text-slate-400" /> {ag.servicos?.nome || 'Procedimento'}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between sm:justify-end gap-3">
+                          <div className="flex flex-col text-left sm:text-right">
+                            <span className="text-xs font-black text-slate-800">R$ {Number(ag.servicos?.preco || 0).toFixed(2)}</span>
+                            <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md border mt-1 ${obterCorStatus(ag.status)}`}>{ag.status || 'Confirmado'}</span>
+                          </div>
+                          <Button size="icon" variant="ghost" onClick={() => iniciarEdicao(ag)} className="h-9 w-9 rounded-xl hover:bg-slate-200 bg-slate-100 border border-slate-200">
+                            <Edit2 className="w-4 h-4 text-slate-600" />
+                          </Button>
                         </div>
                       </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-12 border-2 border-dashed border-slate-200 rounded-2xl">
+                      <AlertCircle className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                      <p className="text-xs font-bold text-slate-400 uppercase italic">Nenhum compromisso agendado.</p>
                     </div>
-                    
-                    <div className="flex items-center gap-4">
-                      <span className={`text-[9px] uppercase font-bold px-2 py-1 rounded-full ${
-                        item.status === 'Concluído' || item.status === 'Realizado' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
-                        item.status === 'Confirmado' ? 'bg-green-50 text-green-700 border border-green-200' :
-                        item.status === 'Falta' || item.status === 'Cancelado' ? 'bg-red-50 text-red-700 border border-red-200' :
-                        'bg-amber-50 text-amber-700 border border-amber-200'
-                      }`}>
-                        {item.status || 'Pendente'}
-                      </span>
-                      <p className={`text-sm font-black ${item.status === 'Falta' || item.status === 'Cancelado' ? 'text-red-400 line-through opacity-60' : 'text-[#4A3721]'}`}>
-                        R$ {Number(item.valor_total).toFixed(2)}
-                      </p>
-                      <button onClick={(e) => excluirAgendamento(e, item.id)} className="p-2 text-red-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"><Trash2 className="w-4 h-4" /></button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))
-            ) : (<div className="text-center py-12 bg-white rounded-2xl border-2 border-dashed border-[#F1E4D1]"><p className="text-xs font-bold text-[#8A6D3B] uppercase italic">Nenhum agendamento encontrado.</p></div>)}
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="space-y-4">
+              <Card className="border-none shadow-sm rounded-2xl bg-white overflow-visible">
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle className="text-sm font-black uppercase text-slate-700 tracking-wide flex items-center gap-2">
+                    {modoEdicao ? <Edit2 className="w-4 h-4 text-slate-500" /> : <Plus className="w-4 h-4 text-slate-500" />}
+                    {modoEdicao ? 'Editar Registro' : 'Novo Agendamento'}
+                  </CardTitle>
+                  {modoEdicao && (
+                    <Button variant="ghost" size="icon" onClick={limparFormAgendamento} className="h-7 w-7 rounded-lg text-slate-500 hover:bg-slate-100">
+                      <X className="w-4 h-4" />
+                    </Button>
+                  )}
+                </CardHeader>
+                <CardContent className="overflow-visible">
+                  {FormularioAgendamento}
+                </CardContent>
+              </Card>
+            </div>
           </div>
         </>
       )}
 
+      {/* ── Aba: Clientes ── */}
       {abaAtiva === 'clientes' && (
-        <div className="space-y-6">
-          <div className="flex flex-col md:flex-row justify-between items-center px-2 gap-4">
-            <h2 className="text-[#4A3721] font-black uppercase text-lg flex items-center gap-2"><Users className="w-5 h-5 text-[#BF953F]" /> Gestão de Clientes</h2>
-            <div className="flex items-center gap-3 bg-white p-2 px-4 rounded-full border border-[#F1E4D1] shadow-sm w-full md:w-64"><Search className="w-4 h-4 text-[#BF953F]" /><input type="text" placeholder="Procurar cliente..." value={buscaCliente} onChange={(e) => setBuscaCliente(e.target.value)} className="w-full bg-transparent text-xs font-bold outline-none text-[#4A3721] placeholder:text-[#8A6D3B]/50" />{buscaCliente && <X onClick={() => setBuscaCliente('')} className="w-4 h-4 text-red-400 cursor-pointer" />}</div>
-            <Button onClick={() => setMostrarNovoCliente(!mostrarNovoCliente)} className="bg-[#BF953F] text-white rounded-full h-10 px-4 text-xs font-bold uppercase flex items-center gap-2 shadow-lg w-full md:w-auto"><Plus className="w-4 h-4" /> Cadastrar Cliente</Button>
-          </div>
-          {mostrarNovoCliente && (<Card className="border-2 border-dashed border-[#BF953F] bg-[#FDF8F2] rounded-2xl animate-in slide-in-from-top duration-300"><CardContent className="p-6"><form onSubmit={cadastrarApenasCliente} className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end"><div className="space-y-1"><label className="text-[10px] font-black uppercase text-[#8A6D3B]">Nome Completo</label><Input value={novoCliente.nome} onChange={e => setNovoCliente({...novoCliente, nome: e.target.value})} required className="bg-white rounded-lg border-[#F1E4D1] h-11" /></div><div className="space-y-1"><label className="text-[10px] font-black uppercase text-[#8A6D3B]">WhatsApp / Telefone</label><Input value={novoCliente.telefone} onChange={e => setNovoCliente({...novoCliente, telefone: aplicarMascaraTelefone(e.target.value)})} placeholder="(00) 00000-0000" className="bg-white rounded-lg border-[#F1E4D1] h-11" /></div><div className="flex gap-2"><Button type="submit" className="flex-1 bg-[#4A3721] text-white font-bold h-11 rounded-lg uppercase text-[10px]">Salvar Cadastro</Button><Button onClick={() => setMostrarNovoCliente(false)} variant="ghost" className="h-11 text-red-500">Cancelar</Button></div></form></CardContent></Card>)}
-          <div className="grid grid-cols-1 gap-3">
-            {clientesFiltrados.length > 0 ? (clientesFiltrados.map((c, i) => (
-              <Card key={i} className="border-none shadow-sm rounded-2xl bg-white overflow-hidden">
-                <div className="p-5 flex items-center justify-between cursor-pointer hover:bg-[#FDF8F2] transition-colors" onClick={() => setClienteExpandido(clienteExpandido === c.nome ? null : c.nome)}><div className="flex items-center gap-4"><div className="bg-[#4A3721] text-[#BF953F] p-3 rounded-full shadow-inner"><User className="w-5 h-5" /></div><div><h3 className="font-bold text-[#4A3721] uppercase text-sm">{c.nome}</h3><p className="text-[10px] text-[#8A6D3B] font-bold flex items-center gap-1 uppercase tracking-tighter"><Phone className="w-3 h-3" /> {c.telefone || 'Sem contato'}</p></div></div><div className="flex items-center gap-4"><div className="text-right hidden md:block"><p className="text-[9px] font-bold text-[#8A6D3B] uppercase">Gasto Real Confirmado</p><p className="text-sm font-black text-[#4A3721]">R$ {c.totalGasto.toFixed(2)}</p></div><ChevronDown className={`w-5 h-5 text-[#BF953F] transition-transform ${clienteExpandido === c.nome ? 'rotate-180' : ''}`} /></div></div>
-                {clienteExpandido === c.nome && (
-                  <div className="px-5 pb-5 pt-2 bg-[#FDF8F2]/30 border-t border-[#F1E4D1] animate-in slide-in-from-top duration-200">
-                    <div className="space-y-2 mt-2">
-                      {c.visitas.filter(v => v.status !== 'Cadastro Base').length > 0 ? (
-                        c.visitas.filter(v => v.status !== 'Cadastro Base').map((v, idx) => (
-                          <div key={idx} className="flex justify-between items-center bg-white p-3 rounded-lg text-xs shadow-sm border border-[#F1E4D1]/30">
-                            <div>
-                              <p className="font-bold text-[#4A3721] uppercase text-[10px]">{v.nome_procedimento}</p>
-                              <p className="text-[#8A6D3B] text-[9px] font-bold uppercase">{format(parseISO(v.data_hora), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}</p>
-                            </div>
-                            <div className="flex items-center gap-3">
-                              <span className={`text-[8px] uppercase font-bold px-1.5 py-0.5 rounded ${
-                                v.status === 'Concluído' ? 'bg-blue-50 text-blue-700' :
-                                v.status === 'Falta' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'
-                              }`}>{v.status}</span>
-                              <p className={`font-black ${v.status === 'Falta' || v.status === 'Cancelado' ? 'text-red-400 line-through opacity-50' : 'text-[#4A3721]'}`}>
-                                R$ {Number(v.valor_total).toFixed(2)}
-                              </p>
-                            </div>
-                          </div>
-                        ))
-                      ) : (<div className="py-8 text-center text-[10px] text-[#8A6D3B] font-bold uppercase italic">Nenhum histórico de visitas.</div>)}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2">
+            <Card className="border-none shadow-sm rounded-2xl bg-white">
+              <CardHeader className="pb-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <CardTitle className="text-xs font-black uppercase text-slate-500 tracking-wider">
+                    Clientes Cadastradas
+                    {buscaClientesCadastrados && (
+                      <span className="ml-2 text-[10px] font-bold text-slate-400 normal-case">
+                        — {clientes.filter(c => c.nome.toLowerCase().includes(buscaClientesCadastrados.toLowerCase()) || (c.telefone || '').includes(buscaClientesCadastrados)).length} resultado(s)
+                      </span>
+                    )}
+                  </CardTitle>
+                  <div className="relative w-full sm:w-72">
+                    <Search className="absolute left-3 top-2.5 w-3.5 h-3.5 text-slate-400" />
+                    <Input
+                      placeholder="Buscar por nome ou telefone..."
+                      value={buscaClientesCadastrados}
+                      onChange={(e) => setBuscaClientesCadastrados(e.target.value)}
+                      className="pl-8 h-9 rounded-xl border-slate-300 text-xs text-slate-900 bg-white placeholder:text-slate-400"
+                    />
+                    {buscaClientesCadastrados && (
+                      <button
+                        type="button"
+                        onClick={() => setBuscaClientesCadastrados('')}
+                        className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600 transition-colors"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {clientes
+                  .filter(c =>
+                    c.nome.toLowerCase().includes(buscaClientesCadastrados.toLowerCase()) ||
+                    (c.telefone || '').includes(buscaClientesCadastrados.replace(/\D/g, ''))
+                  )
+                  .map((c) => (
+                  <div key={c.id} className="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-xl hover:shadow-sm transition-all">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-slate-200 rounded-xl text-slate-700"><User className="w-4 h-4" /></div>
+                      <div>
+                        {/* ── Nome clicável → abre Sheet ── */}
+                        <button
+                          type="button"
+                          onClick={() => abrirHistoricoCliente(c)}
+                          className="text-sm font-black text-slate-800 hover:text-slate-600 hover:underline underline-offset-2 text-left transition-colors"
+                        >
+                          {c.nome}
+                        </button>
+                        <p className="text-xs text-slate-500 font-medium">{formatarTelefone(c.telefone) || 'Sem telefone'}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button size="icon" variant="ghost" onClick={() => iniciarEdicaoCliente(c)} className="h-8 w-8 rounded-lg hover:bg-slate-200 bg-white border border-slate-200"><Edit2 className="w-3.5 h-3.5 text-slate-600" /></Button>
+                      <Button size="icon" variant="ghost" onClick={() => handleExcluirCliente(c.id, c.nome)} className="h-8 w-8 rounded-lg hover:bg-rose-50 hover:border-rose-200 bg-white border border-slate-200"><Trash2 className="w-3.5 h-3.5 text-rose-600" /></Button>
                     </div>
                   </div>
+                  ))}
+                {clientes.filter(c =>
+                  c.nome.toLowerCase().includes(buscaClientesCadastrados.toLowerCase()) ||
+                  (c.telefone || '').includes(buscaClientesCadastrados.replace(/\D/g, ''))
+                ).length === 0 && (
+                  <div className="text-center py-10 border-2 border-dashed border-slate-200 rounded-2xl">
+                    <AlertCircle className="w-7 h-7 text-slate-300 mx-auto mb-2" />
+                    <p className="text-xs font-bold text-slate-400 uppercase italic">
+                      {buscaClientesCadastrados
+                        ? `Nenhuma cliente encontrada para "${buscaClientesCadastrados}".`
+                        : 'Nenhuma cliente cadastrada ainda.'}
+                    </p>
+                  </div>
                 )}
-              </Card>
-            ))) : (<div className="text-center py-12 bg-white rounded-2xl border-2 border-dashed border-[#F1E4D1]"><p className="text-xs font-bold text-[#8A6D3B] uppercase italic">Cliente não encontrado.</p></div>)}
+              </CardContent>
+            </Card>
+          </div>
+
+          <div>
+            <Card className="border-none shadow-sm rounded-2xl bg-white">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-black uppercase text-slate-700 tracking-wide flex items-center gap-2">
+                  {modoEdicaoCliente ? <Edit2 className="w-4 h-4 text-slate-500" /> : <Plus className="w-4 h-4 text-slate-500" />}
+                  {modoEdicaoCliente ? 'Editar Cadastro' : 'Cadastrar Nova Cliente'}
+                </CardTitle>
+                {modoEdicaoCliente && (
+                  <Button variant="ghost" size="icon" onClick={limparFormCliente} className="h-7 w-7 rounded-lg text-slate-500 hover:bg-slate-100"><X className="w-4 h-4" /></Button>
+                )}
+              </CardHeader>
+              <CardContent>
+                <form onSubmit={handleSalvarCliente} className="space-y-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black uppercase text-slate-500">Nome da Cliente *</label>
+                    <Input placeholder="Nome completo" value={formCliente.nome} onChange={(e) => setFormCliente({ ...formCliente, nome: e.target.value })} className="rounded-xl border-slate-300 h-10 text-xs font-bold text-slate-900 bg-white placeholder:text-slate-400" required />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black uppercase text-slate-500">Telefone *</label>
+                    <Input placeholder="(00) 00000-0000" value={formCliente.telefone} onChange={(e) => setFormCliente({ ...formCliente, telefone: formatarTelefone(e.target.value) })} className="rounded-xl border-slate-300 h-10 text-xs text-slate-900 bg-white placeholder:text-slate-400" required />
+                  </div>
+                  <button type="submit" className="w-full h-10 bg-slate-900 text-white hover:bg-slate-800 font-bold text-xs rounded-xl uppercase tracking-wider shadow-md transition-all block">
+                    {modoEdicaoCliente ? 'Salvar Alterações' : 'Salvar Cliente'}
+                  </button>
+                </form>
+              </CardContent>
+            </Card>
           </div>
         </div>
       )}
 
-      {abaAtiva === 'fidelidade' && (
-        <div className="space-y-6 animate-in slide-in-from-bottom duration-500">
-          <div className="flex flex-col md:flex-row justify-between items-center gap-4 px-2">
-            <div>
-              <h2 className="text-[#4A3721] font-black uppercase text-xl flex items-center gap-2"><Trophy className="w-6 h-6 text-[#BF953F]" /> Ranking de Fidelidade</h2>
-              <p className="text-[10px] text-[#8A6D3B] font-bold uppercase tracking-widest mt-1">As estrelas que mais brilham no studio</p>
-            </div>
-            <div className="flex items-center gap-2 bg-white border border-[#F1E4D1] px-4 py-2 rounded-xl shadow-sm">
-              <Filter className="w-3 h-3 text-[#BF953F]" />
-              <select value={anoFidelidade} onChange={(e) => setAnoFidelidade(e.target.value)} className="bg-transparent text-xs font-black text-[#4A3721] outline-none">
-                {['2024', '2025', '2026', '2027'].map(year => <option key={year} value={year}>{year}</option>)}
-              </select>
-            </div>
-          </div>
-
-          <div className="grid gap-3">
-            {rankingFidelidade.length > 0 ? (
-              rankingFidelidade.map((cliente, index) => (
-                <Card key={index} className={`border-none shadow-sm rounded-2xl overflow-hidden transition-all ${index === 0 ? 'bg-gradient-to-r from-[#FFFBF2] to-white border-l-8 border-[#BF953F]' : 'bg-white'}`}>
-                  <CardContent className="p-5 flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className="flex flex-col items-center justify-center w-10">
-                        {index === 0 && <Crown className="w-8 h-8 text-[#BF953F] animate-bounce" />}
-                        {index === 1 && <Medal className="w-7 h-7 text-slate-400" />}
-                        {index === 2 && <Medal className="w-7 h-7 text-amber-700" />}
-                        {index > 2 && <span className="text-lg font-black text-[#F1E4D1]">#{index + 1}</span>}
-                      </div>
-                      <div>
-                        <h3 className="font-bold text-[#4A3721] uppercase text-sm flex items-center gap-2">
-                          {cliente.nome}
-                          {index === 0 && <span className="bg-[#BF953F] text-white text-[8px] px-2 py-0.5 rounded-full">ESTRELA Nº 1</span>}
-                        </h3>
-                        <div className="flex gap-4 mt-1">
-                          <span className="flex items-center gap-1 text-[10px] font-bold text-[#8A6D3B] uppercase"><Star className="w-3 h-3 fill-[#BF953F] text-[#BF953F]" /> {cliente.visitasNoAno} Visitas</span>
-                          <span className="flex items-center gap-1 text-[10px] font-bold text-[#8A6D3B] uppercase"><DollarSign className="w-3 h-3 text-[#BF953F]" /> R$ {cliente.gastoNoAno.toFixed(2)}</span>
-                        </div>
-                      </div>
+      {/* ── Aba: Ranking ── */}
+      {abaAtiva === 'ranking' && (
+        <Card className="border-none shadow-sm rounded-2xl bg-white">
+          <CardHeader><CardTitle className="text-xs font-black uppercase text-slate-500 tracking-wider">Top Clientes - Engajamento & Faturamento</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            {processarRankingClientes().length > 0 ? (
+              processarRankingClientes().map((item, index) => (
+                <div key={index} className="flex items-center justify-between p-4 bg-gradient-to-r from-slate-50 to-white border border-slate-100 rounded-xl relative overflow-hidden">
+                  <div className="flex items-center gap-4">
+                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-base shadow-sm ${index === 0 ? 'bg-amber-100 text-amber-600' : index === 1 ? 'bg-slate-100 text-slate-500' : index === 2 ? 'bg-orange-100 text-orange-700' : 'bg-slate-100 text-slate-400'}`}>
+                      {index === 0 ? '👑' : index === 1 ? '🥈' : index === 2 ? '🥉' : <span className="text-xs font-black">{index + 1}º</span>}
                     </div>
-                    <div className="text-right hidden sm:block">
-                      <p className="text-[9px] font-black text-[#BF953F] uppercase">Ranking {anoFidelidade}</p>
-                      <p className="text-[10px] font-bold text-[#4A3721] uppercase">Fidelidade Máxima</p>
+                    <div>
+                      {/* ── Nome clicável → abre Sheet ── */}
+                      <button
+                        type="button"
+                        onClick={() => item.clienteObj && abrirHistoricoCliente(item.clienteObj)}
+                        className="text-sm font-black text-slate-800 hover:text-slate-600 hover:underline underline-offset-2 flex items-center gap-2 text-left transition-colors"
+                      >
+                        {item.nome}
+                        {index === 0 && <span className="bg-amber-500/10 text-amber-600 text-[8px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider">Fidelidade Ouro</span>}
+                      </button>
+                      <p className="text-[11px] font-bold text-slate-500 uppercase">{item.telefone}</p>
                     </div>
-                  </CardContent>
-                </Card>
+                  </div>
+                  <div className="flex items-center gap-6">
+                    <div className="text-center">
+                      <span className="text-[10px] font-black text-slate-400 uppercase block tracking-wider">Presenças</span>
+                      <span className="text-xs font-black text-slate-700 flex items-center gap-1 justify-center"><Star className="w-3 h-3 text-amber-500 fill-amber-500" /> {item.visitas}</span>
+                    </div>
+                    <div className="text-right min-w-[90px]">
+                      <span className="text-[10px] font-black text-slate-400 uppercase block tracking-wider">Total Investido</span>
+                      <span className="text-xs font-black text-emerald-600">R$ {item.totalGasto.toFixed(2)}</span>
+                    </div>
+                  </div>
+                </div>
               ))
             ) : (
-              <div className="text-center py-20 bg-white rounded-3xl border-2 border-dashed border-[#F1E4D1]">
-                <Trophy className="w-12 h-12 mx-auto opacity-10 mb-4 text-[#4A3721]" />
-                <p className="text-xs font-bold text-[#8A6D3B] uppercase italic">Nenhum dado de fidelidade para este ano.</p>
-              </div>
+              <p className="text-xs text-center text-slate-400 italic py-6">Aguardando dados de agendamentos para consolidar o ranking.</p>
             )}
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       )}
     </div>
   );

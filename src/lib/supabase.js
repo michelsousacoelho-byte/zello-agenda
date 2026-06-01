@@ -1,6 +1,11 @@
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = 'https://zcurbdfvaskskggzeuee.supabase.co'
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpjdXJiZGZ2YXNrc2tnZ3pldWVlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3NzI2MDAsImV4cCI6MjA5NDM0ODYwMH0.2LbH1LZe2Q06SAuJw6Khq60AV5Atk-DqgwzX4RbDdRo'
+// Buscando as variáveis de ambiente do arquivo .env de forma segura
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+
+if (!supabaseUrl || !supabaseKey) {
+  console.error("Erro: As chaves do Supabase não foram encontradas no arquivo .env")
+}
 
 export const supabase = createClient(supabaseUrl, supabaseKey)

@@ -1,42 +1,54 @@
-import { Sun, Heart, LogOut, User } from 'lucide-react';
+import React, { useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/AuthContext';
-import { Button } from '@/components/ui/button';
+import { LogOut, User, Calendar } from 'lucide-react';
 
 export default function Header() {
-  const { user, logout, isAuthenticated } = useAuth();
-  const isAdmin = user?.role === 'admin';
+  const { slug } = useParams();
+  const { logout } = useAuth();
+  const navigate = useNavigate();
+
+  const handleSair = async () => {
+    await logout();
+    navigate('/login');
+  };
 
   return (
-    <header className="bg-gradient-to-r from-primary to-secondary text-primary-foreground shadow-lg">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Sun className="w-7 h-7 sm:w-8 sm:h-8" />
-            <div>
-              <h1 className="text-xl sm:text-3xl font-bold">Andréia Moura</h1>
-              <p className="text-xs sm:text-sm opacity-90 flex items-center gap-1">
-                Bronze & Estética <Heart className="w-3 h-3 sm:w-4 sm:h-4" />
-              </p>
+    <header className="bg-slate-900 text-white border-b border-slate-800 shadow-md">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+        
+        {/* LADO ESQUERDO: LOGO E IDENTIDADE */}
+        <div className="flex items-center gap-3">
+          {/* Ícone sutil, sem fundo chamativo e sem o amarelo antigo */}
+          <Calendar className="w-6 h-6 text-slate-300" />
+          
+          <div>
+            {/* Texto inserido diretamente de forma estática para vencer o cache */}
+            <h1 className="text-xl font-black uppercase tracking-wider text-white">
+              Zello Agenda
+            </h1>
+            <p className="text-[10px] text-slate-400 tracking-widest uppercase font-bold">
+              Painel Administrativo
+            </p>
+          </div>
+        </div>
+
+        {/* LADO DIREITO: USUÁRIO E BOTÃO SAIR */}
+        <div className="flex items-center gap-6">
+          <div className="hidden sm:flex items-center gap-2 text-sm text-slate-300 font-medium">
+            <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-300">
+              <User className="w-4 h-4" />
             </div>
+            <span>Administrador</span>
           </div>
 
-          {isAuthenticated && (
-            <div className="flex items-center gap-2">
-              <div className="hidden sm:flex items-center gap-1.5 text-sm opacity-90">
-                <User className="w-4 h-4" />
-                <span>{isAdmin ? 'Administradora' : user?.full_name || 'Cliente'}</span>
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => logout()}
-                className="text-primary-foreground hover:bg-white/20 text-xs sm:text-sm"
-              >
-                <LogOut className="w-4 h-4 sm:mr-1" />
-                <span className="hidden sm:inline">Sair</span>
-              </Button>
-            </div>
-          )}
+          <button
+            onClick={handleSair}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-300 hover:text-white hover:bg-slate-700 font-bold text-xs uppercase tracking-wider transition-all"
+          >
+            <LogOut className="w-3.5 h-3.5 text-rose-400" />
+            <span>Sair</span>
+          </button>
         </div>
       </div>
     </header>
