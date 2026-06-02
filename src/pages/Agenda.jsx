@@ -505,6 +505,23 @@ export default function SistemaGestao() {
     c.nome.toLowerCase().includes(termoBuscaClienteForm.toLowerCase())
   );
 
+  const termoClientesCadastrados = buscaClientesCadastrados.trim().toLowerCase();
+  const telefoneBuscaClientesCadastrados = buscaClientesCadastrados.replace(/\D/g, '');
+  const clientesFiltrados = clientes.filter((c) => {
+    if (!termoClientesCadastrados && !telefoneBuscaClientesCadastrados) return true;
+
+    const nomeCliente = (c.nome || '').toLowerCase();
+    const telefoneCliente = (c.telefone || '').replace(/\D/g, '');
+    const encontrouPorNome = termoClientesCadastrados
+      ? nomeCliente.includes(termoClientesCadastrados)
+      : false;
+    const encontrouPorTelefone = telefoneBuscaClientesCadastrados
+      ? telefoneCliente.includes(telefoneBuscaClientesCadastrados)
+      : false;
+
+    return encontrouPorNome || encontrouPorTelefone;
+  });
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[50vh]">
@@ -774,7 +791,7 @@ export default function SistemaGestao() {
                     Clientes Cadastradas
                     {buscaClientesCadastrados && (
                       <span className="ml-2 text-[10px] font-bold text-slate-400 normal-case">
-                        — {clientes.filter(c => c.nome.toLowerCase().includes(buscaClientesCadastrados.toLowerCase()) || (c.telefone || '').includes(buscaClientesCadastrados)).length} resultado(s)
+                        — {clientesFiltrados.length} resultado(s)
                       </span>
                     )}
                   </CardTitle>
@@ -799,12 +816,7 @@ export default function SistemaGestao() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-2">
-                {clientes
-                  .filter(c =>
-                    c.nome.toLowerCase().includes(buscaClientesCadastrados.toLowerCase()) ||
-                    (c.telefone || '').includes(buscaClientesCadastrados.replace(/\D/g, ''))
-                  )
-                  .map((c) => (
+                {clientesFiltrados.map((c) => (
                   <div key={c.id} className="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-xl hover:shadow-sm transition-all">
                     <div className="flex items-center gap-3">
                       <div className="p-2 bg-slate-200 rounded-xl text-slate-700"><User className="w-4 h-4" /></div>
@@ -826,10 +838,7 @@ export default function SistemaGestao() {
                     </div>
                   </div>
                   ))}
-                {clientes.filter(c =>
-                  c.nome.toLowerCase().includes(buscaClientesCadastrados.toLowerCase()) ||
-                  (c.telefone || '').includes(buscaClientesCadastrados.replace(/\D/g, ''))
-                ).length === 0 && (
+                {clientesFiltrados.length === 0 && (
                   <div className="text-center py-10 border-2 border-dashed border-slate-200 rounded-2xl">
                     <AlertCircle className="w-7 h-7 text-slate-300 mx-auto mb-2" />
                     <p className="text-xs font-bold text-slate-400 uppercase italic">
