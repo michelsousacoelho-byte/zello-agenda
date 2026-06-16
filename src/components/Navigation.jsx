@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Sparkles, Calendar, Menu, X } from 'lucide-react'; // Trocado Scissors por Sparkles
+import { LayoutDashboard, Sparkles, Calendar, Menu, X, WalletCards, MessagesSquare } from 'lucide-react'; // Trocado Scissors por Sparkles
 import { useAuth } from '@/lib/AuthContext';
 import { useState } from 'react';
 
@@ -20,8 +20,10 @@ export default function Navigation() {
   const studioSlug = extrairSlugDaUrl();
   const navItems = [
     { path: `/admin/${studioSlug}/dashboard`, label: 'Dashboard', icon: LayoutDashboard },
-    { path: `/admin/${studioSlug}/servicos`, label: 'Serviços', icon: Sparkles }, // Substituído aqui também
+    { path: `/admin/${studioSlug}/servicos`, label: 'Operação', icon: Sparkles },
     { path: `/admin/${studioSlug}/agenda`, label: 'Agenda', icon: Calendar },
+    { path: `/admin/${studioSlug}/financeiro`, label: 'Financeiro', icon: WalletCards },
+    { path: `/admin/${studioSlug}/automacoes`, label: 'Automação', icon: MessagesSquare },
   ];
 
   const isActive = (path) => location.pathname === path;

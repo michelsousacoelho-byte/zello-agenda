@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
+import { createContext, useState, useContext, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 
 const AuthContext = createContext();
@@ -6,6 +6,7 @@ const AuthContext = createContext();
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState(null);
 
   // Função interna para tratar o usuário e mapear a role administrativa correta
   const mapearUsuarioComRole = (supabaseUser) => {
@@ -24,15 +25,26 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     // 1. Verifica se já existe uma sessão ativa ao abrir o app
     const getSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      setUser(mapearUsuarioComRole(session?.user));
-      setLoading(false);
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) throw error;
+
+        setAuthError(null);
+        setUser(mapearUsuarioComRole(session?.user));
+      } catch (err) {
+        console.error('Erro ao carregar sessão:', err);
+        setAuthError({ type: 'auth_session_error', message: err.message });
+        setUser(null);
+      } finally {
+        setLoading(false);
+      }
     };
 
     getSession();
 
     // 2. ESCUTA REAL: Atualiza o estado automaticamente ao logar ou deslogar
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAuthError(null);
       setUser(mapearUsuarioComRole(session?.user));
       setLoading(false);
     });
@@ -53,6 +65,7 @@ export const AuthProvider = ({ children }) => {
     <AuthContext.Provider value={{ 
       user, 
       loading,
+      authError,
       logout,
       isAuthenticated: !!user
     }}>

@@ -2,23 +2,23 @@ import { Toaster } from "@/components/ui/toaster"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
-import { BrowserRouter as Router, Route, Routes, Link, Navigate, useNavigate, useParams } from 'react-router-dom';
+import { BrowserRouter as Router, Route, Routes, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { AuthProvider } from '@/lib/AuthContext';
-import { Button } from '@/components/ui/button';
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 
+import Home from '@/pages/Home';
 import Dashboard from '@/pages/Dashboard';
 import Servicos from '@/pages/Servicos';
 import Agenda from '@/pages/Agenda';
 import Reserva from '@/pages/Reserva';
+import Financeiro from '@/pages/Financeiro';
+import Automacoes from '@/pages/Automacoes';
 import Login from '@/pages/Login'; 
 import PageNotFound from './lib/PageNotFound';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import Header from '@/components/Header';
 import Navigation from '@/components/Navigation';
-
-const TEXTO_HOME_DESC = "Plataforma profissional de agendamento e gestão para estúdios de estética e bem-estar.";
 
 function ThemeProvider({ children }) {
   const { slug } = useParams();
@@ -96,17 +96,21 @@ function AppRoutes() {
         </ProtectedRoute>
       } />
 
+      <Route path="/admin/:slug/financeiro" element={
+        <ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />}>
+          <AdminLayout><Financeiro /></AdminLayout>
+        </ProtectedRoute>
+      } />
+
+      <Route path="/admin/:slug/automacoes" element={
+        <ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />}>
+          <AdminLayout><Automacoes /></AdminLayout>
+        </ProtectedRoute>
+      } />
+
       <Route path="/admin/:slug/*" element={<Navigate to="dashboard" replace />} />
       
-      <Route path="/" element={
-        <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-4 text-center">
-          <h1 className="text-3xl font-bold text-slate-900 mb-2">Zello Agenda</h1>
-          <p className="text-slate-600 max-w-sm mb-6">{TEXTO_HOME_DESC}</p>
-          <Link to="/studio-demo/login">
-            <Button className="bg-slate-900 hover:bg-slate-800 text-white px-6 py-2 rounded-xl transition-colors">Acessar Painel Demo</Button>
-          </Link>
-        </div>
-      } />
+      <Route path="/" element={<Home />} />
 
       <Route path="*" element={<PageNotFound />} />
     </Routes>

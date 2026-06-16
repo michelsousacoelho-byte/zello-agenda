@@ -1,16 +1,59 @@
-# React + Vite
+# Zello Agenda
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+SaaS de agendamento e gestão para estúdios de beleza, estética e bem-estar.
 
-Currently, two official plugins are available:
+O Zello Agenda reúne link público de reservas, agenda inteligente, gestão de serviços/profissionais, clientes, automações assistidas por WhatsApp, dashboard executivo e financeiro com comissões.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Principais módulos
 
-## React Compiler
+- **Home comercial**: apresentação do produto em `/`.
+- **Link público**: reserva online em `/:slug`.
+- **Dashboard**: KPIs, checklist de ativação e roteiro de demo.
+- **Operação**: branding, horários, serviços, profissionais e comissões.
+- **Agenda**: agendamentos, clientes, histórico, status e WhatsApp.
+- **Automação**: confirmação, lembrete, pós-atendimento e recuperação.
+- **Financeiro**: faturamento, previsão, comissões, líquido e CSV.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Rodar localmente
 
-## Expanding the ESLint configuration
+```bash
+npm install
+npm run dev
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Crie um `.env` local com:
+
+```bash
+VITE_SUPABASE_URL=
+VITE_SUPABASE_ANON_KEY=
+```
+
+Existe um modelo seguro em `.env.example`.
+
+## Build de produção
+
+```bash
+npm run build
+```
+
+O projeto é uma SPA Vite/React. Em produção, configure rewrites para `index.html`; o `vercel.json` já cobre isso.
+
+## Supabase
+
+Rode as migrations em ordem:
+
+1. `20260603170000_add_operational_settings.sql`
+2. `20260603173000_public_booking_policies.sql`
+3. `20260603180000_add_professionals.sql`
+4. `20260603181000_public_professional_policies.sql`
+5. `20260603200000_add_professional_commissions.sql`
+6. `20260603203000_add_public_branding.sql`
+7. `20260603204000_public_client_dedup.sql`
+8. `20260603205000_public_booking_hardening.sql`
+9. `20260603210000_seed_studio_demo.sql` apenas para demo
+
+## Documentação operacional
+
+- [Demo e implantação](docs/demo-e-implantacao.md)
+- [Checklist de produção](docs/producao-checklist.md)
+- [Onboarding de cliente](docs/onboarding-cliente.md)

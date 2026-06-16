@@ -1,6 +1,9 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
+import ExecutiveKpiOverview from '@/components/dashboard/ExecutiveKpiOverview';
+import DemoPresentationChecklist from '@/components/dashboard/DemoPresentationChecklist';
+import SetupChecklist from '@/components/onboarding/SetupChecklist';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import {
@@ -17,16 +20,80 @@ import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis,
   CartesianGrid, Tooltip as RechartsTooltip, Legend
 } from 'recharts';
-import { format, getDaysInMonth, subMonths, startOfMonth, endOfMonth, parseISO } from 'date-fns';
+import { format, getDaysInMonth, subMonths } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 // ─── Constante de Meta Mensal ────────────────────────────────────────────────
 const META_MENSAL_PADRAO = 5000;
+const STATUS_INATIVOS = ['cancelado', 'falta'];
+const STATUS_CONCLUIDOS = ['concluído', 'concluido'];
 
 // ─── Utilitários ─────────────────────────────────────────────────────────────
 function calcVariacao(atual, anterior) {
   if (!anterior || anterior === 0) return null;
   return ((atual - anterior) / anterior) * 100;
+}
+
+function normalizarStatus(status) {
+  return (status || '').toLowerCase();
+}
+
+function minutosDoHorario(valor, fallback) {
+  if (!valor || typeof valor !== 'string') return fallback;
+  const [hora, minuto = '0'] = valor.split(':');
+  const h = Number(hora);
+  const m = Number(minuto);
+  if (Number.isNaN(h) || Number.isNaN(m)) return fallback;
+  return h * 60 + m;
+}
+
+function obterCargaDiariaMinutos(estabelecimento) {
+  const inicio =
+    estabelecimento?.horario_inicio ||
+    estabelecimento?.hora_abertura ||
+    estabelecimento?.horario_abertura ||
+    estabelecimento?.inicio_expediente ||
+    '08:00';
+  const fim =
+    estabelecimento?.horario_fim ||
+    estabelecimento?.hora_fechamento ||
+    estabelecimento?.horario_fechamento ||
+    estabelecimento?.fim_expediente ||
+    '18:00';
+
+  return Math.max(minutosDoHorario(fim, 18 * 60) - minutosDoHorario(inicio, 8 * 60), 0);
+}
+
+function obterPeriodo(mes, ano) {
+  if (mes === 'todos') {
+    return {
+      inicio: new Date(Number(ano), 0, 1, 0, 0, 0),
+      fim: new Date(Number(ano), 11, 31, 23, 59, 59),
+      label: `Ano ${ano}`,
+    };
+  }
+
+  const mesIndex = Number(mes) - 1;
+  return {
+    inicio: new Date(Number(ano), mesIndex, 1, 0, 0, 0),
+    fim: new Date(Number(ano), mesIndex + 1, 0, 23, 59, 59),
+    label: format(new Date(Number(ano), mesIndex, 1), 'MMM yyyy', { locale: ptBR }),
+  };
+}
+
+function contarDiasOperacionais(inicio, fim) {
+  let total = 0;
+  const cursor = new Date(inicio);
+  cursor.setHours(0, 0, 0, 0);
+  const limite = new Date(fim);
+  limite.setHours(0, 0, 0, 0);
+
+  while (cursor <= limite) {
+    if (cursor.getDay() !== 0) total += 1;
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return total;
 }
 
 function exportarCSV(stats, carroChefe, mesLabel, ano) {
@@ -181,8 +248,19 @@ export default function Dashboard() {
   const [mes, setMes] = useState(String(new Date().getMonth() + 1));
   const [ano, setAno] = useState(new Date().getFullYear());
   const [stats, setStats] = useState({ hoje: 0, total: 0, clientes: 0, receitaReal: 0, receitaPrevista: 0 });
+  const [executiveMetrics, setExecutiveMetrics] = useState({
+    faturamentoHoje: 0,
+    faturamentoMes: 0,
+    ocupacaoAgenda: 0,
+    horasOcupadas: 0,
+    clientesRecorrentes: 0,
+    clientesNovos: 0,
+    atendimentosHoje: 0,
+    periodoLabel: '',
+  });
   const [statsAntMes, setStatsAntMes] = useState({ receitaReal: 0, receitaPrevista: 0, total: 0 });
   const [carroChefe, setCarroChefe] = useState([]);
+  const [rankingProfissionais, setRankingProfissionais] = useState([]);
   const [dadosGrafico, setDadosGrafico] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -216,7 +294,7 @@ export default function Dashboard() {
       // Busca todos os agendamentos (atual + mês anterior para comparativo)
       const { data: agendamentos } = await supabase
         .from('agendamentos')
-        .select('*, clientes(*), servicos(*)')
+        .select('*, clientes(*), servicos(*), profissionais(*)')
         .eq('estabelecimento_id', estabelecimento.id);
 
       const { data: totalClientesData } = await supabase
@@ -225,6 +303,15 @@ export default function Dashboard() {
         .eq('estabelecimento_id', estabelecimento.id);
 
       const hojeStr = new Date().toISOString().split('T')[0];
+      const periodoAtual = obterPeriodo(mes, ano);
+      const cargaDiariaMinutos = obterCargaDiariaMinutos(estabelecimento);
+      const diasOperacionais = contarDiasOperacionais(periodoAtual.inicio, periodoAtual.fim);
+      const capacidadePeriodoMinutos = cargaDiariaMinutos * diasOperacionais;
+      const clientesPeriodo = new Set();
+      const clientesComHistoricoAnterior = new Set();
+      let faturamentoHoje = 0;
+      let atendimentosHojeAtivos = 0;
+      let minutosOcupados = 0;
 
       // Período atual
       let totalHoje = 0, totalGeral = 0, receitaRealizada = 0, receitaEstimada = 0;
@@ -232,6 +319,7 @@ export default function Dashboard() {
       let receitaRealAnt = 0, receitaEstAnt = 0, totalAnt = 0;
 
       const contagemServicos = {};
+      const mapaProfissionais = {};
       const mapaDiario = {}; // { 'dia': { real: 0, prevista: 0 } }
 
       // Calcula período do mês anterior para comparativo
@@ -246,12 +334,19 @@ export default function Dashboard() {
         const dataStr = ag.data_hora ? ag.data_hora.split('T')[0] : '';
         const dataObj = ag.data_hora ? new Date(ag.data_hora) : null;
         const preco = Number(ag.servicos?.preco || 0);
-        const statusNorm = ag.status?.toLowerCase();
+        const statusNorm = normalizarStatus(ag.status);
         const agMes = dataObj ? dataObj.getMonth() + 1 : null;
         const agAno = dataObj ? dataObj.getFullYear() : null;
+        const ativo = !STATUS_INATIVOS.includes(statusNorm);
+        const concluido = STATUS_CONCLUIDOS.includes(statusNorm);
+        const clienteKey = ag.cliente_id || ag.clientes?.telefone || ag.clientes?.nome;
 
         // Hoje
         if (dataStr === hojeStr) totalHoje++;
+        if (dataStr === hojeStr && ativo) {
+          atendimentosHojeAtivos++;
+          if (concluido) faturamentoHoje += preco;
+        }
 
         // Filtro mês atual
         const noMesAtual = mes === 'todos'
@@ -263,7 +358,7 @@ export default function Dashboard() {
           const dia = dataObj.getDate();
           if (!mapaDiario[dia]) mapaDiario[dia] = { real: 0, prevista: 0 };
 
-          if (statusNorm === 'concluído' || statusNorm === 'concluido') {
+          if (concluido) {
             receitaRealizada += preco;
             mapaDiario[dia].real += preco;
           } else if (statusNorm === 'confirmado' || statusNorm === 'pendente') {
@@ -271,11 +366,29 @@ export default function Dashboard() {
             mapaDiario[dia].prevista += preco;
           }
 
+          if (ativo) {
+            minutosOcupados += Number(ag.servicos?.duracao || 60);
+            if (clienteKey) clientesPeriodo.add(clienteKey);
+          }
+
+          if (ativo && ag.profissionais?.nome) {
+            const idProfissional = ag.profissional_id || ag.profissionais.nome;
+            if (!mapaProfissionais[idProfissional]) {
+              mapaProfissionais[idProfissional] = {
+                nome: ag.profissionais.nome,
+                atendimentos: 0,
+                receita: 0
+              };
+            }
+            mapaProfissionais[idProfissional].atendimentos += 1;
+            if (concluido) mapaProfissionais[idProfissional].receita += preco;
+          }
+
           // Ranking de serviços com separação concluídos/agendados
           if (ag.servicos?.nome) {
             const nome = ag.servicos.nome;
             if (!contagemServicos[nome]) contagemServicos[nome] = { concluidos: 0, agendados: 0, total: 0 };
-            if (statusNorm === 'concluído' || statusNorm === 'concluido') {
+            if (concluido) {
               contagemServicos[nome].concluidos++;
             } else if (statusNorm !== 'cancelado' && statusNorm !== 'falta') {
               contagemServicos[nome].agendados++;
@@ -293,8 +406,12 @@ export default function Dashboard() {
 
         if (dataObj && noMesAnt) {
           totalAnt++;
-          if (statusNorm === 'concluído' || statusNorm === 'concluido') receitaRealAnt += preco;
+          if (concluido) receitaRealAnt += preco;
           else if (statusNorm === 'confirmado' || statusNorm === 'pendente') receitaEstAnt += preco;
+        }
+
+        if (dataObj && clienteKey && ativo && dataObj < periodoAtual.inicio) {
+          clientesComHistoricoAnterior.add(clienteKey);
         }
       });
 
@@ -312,10 +429,31 @@ export default function Dashboard() {
       const rankingServicos = Object.entries(contagemServicos)
         .map(([nome, v]) => ({ nome, ...v }))
         .sort((a, b) => b.total - a.total);
+      const rankingEquipe = Object.values(mapaProfissionais)
+        .sort((a, b) => b.receita - a.receita || b.atendimentos - a.atendimentos);
+
+      const clientesRecorrentes = [...clientesPeriodo].filter(cliente =>
+        clientesComHistoricoAnterior.has(cliente)
+      ).length;
+      const clientesNovos = Math.max(clientesPeriodo.size - clientesRecorrentes, 0);
+      const ocupacaoAgenda = capacidadePeriodoMinutos > 0
+        ? Math.min((minutosOcupados / capacidadePeriodoMinutos) * 100, 100)
+        : 0;
 
       setStats({ hoje: totalHoje, total: totalGeral, clientes: totalClientesData?.length || 0, receitaReal: receitaRealizada, receitaPrevista: receitaEstimada });
+      setExecutiveMetrics({
+        faturamentoHoje,
+        faturamentoMes: receitaRealizada,
+        ocupacaoAgenda,
+        horasOcupadas: minutosOcupados / 60,
+        clientesRecorrentes,
+        clientesNovos,
+        atendimentosHoje: atendimentosHojeAtivos,
+        periodoLabel: periodoAtual.label,
+      });
       setStatsAntMes({ receitaReal: receitaRealAnt, receitaPrevista: receitaEstAnt, total: totalAnt });
       setCarroChefe(rankingServicos);
+      setRankingProfissionais(rankingEquipe);
       setDadosGrafico(grafico);
     } catch (e) {
       console.error(e);
@@ -325,6 +463,7 @@ export default function Dashboard() {
   }, [estabelecimento, mes, ano]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     carregarMetricas();
   }, [carregarMetricas]);
 
@@ -370,6 +509,12 @@ export default function Dashboard() {
           </button>
         </div>
       </div>
+
+      <SetupChecklist estabelecimento={estabelecimento} />
+
+      <DemoPresentationChecklist />
+
+      <ExecutiveKpiOverview metrics={executiveMetrics} />
 
       {/* ── StatCards ── */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -501,6 +646,37 @@ export default function Dashboard() {
                 })
               ) : (
                 <p className="text-xs italic text-slate-400">Nenhum dado disponível.</p>
+              )}
+            </div>
+          </Card>
+
+          <Card className="border border-slate-200 bg-white p-5 rounded-2xl shadow-sm">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="p-2.5 bg-slate-900 text-white rounded-xl"><Users className="w-4 h-4" /></div>
+              <div className="flex items-center gap-1.5">
+                <h4 className="text-xs font-black text-slate-800 uppercase">Equipe</h4>
+                <InfoTooltip texto="Ranking por profissional no período selecionado, considerando atendimentos ativos e receita concluída." />
+              </div>
+            </div>
+            <div className="space-y-3">
+              {rankingProfissionais.length > 0 ? (
+                rankingProfissionais.slice(0, 4).map((item, index) => (
+                  <div key={item.nome} className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 p-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-black uppercase text-slate-800">
+                        {index + 1}º {item.nome}
+                      </p>
+                      <p className="text-[10px] font-bold uppercase text-slate-400">
+                        {item.atendimentos} atendimento(s)
+                      </p>
+                    </div>
+                    <span className="text-xs font-black text-emerald-600">
+                      R$ {item.receita.toFixed(0)}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <p className="text-xs italic text-slate-400">Sem profissionais no período.</p>
               )}
             </div>
           </Card>
