@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Sparkles, Calendar, Menu, X, WalletCards, MessagesSquare } from 'lucide-react'; // Trocado Scissors por Sparkles
+import { LayoutDashboard, Sparkles, Calendar, Menu, X, WalletCards, MessagesSquare, CreditCard } from 'lucide-react'; // Trocado Scissors por Sparkles
 import { useAuth } from '@/lib/AuthContext';
 import { useState } from 'react';
 
@@ -24,6 +24,7 @@ export default function Navigation() {
     { path: `/admin/${studioSlug}/agenda`, label: 'Agenda', icon: Calendar },
     { path: `/admin/${studioSlug}/financeiro`, label: 'Financeiro', icon: WalletCards },
     { path: `/admin/${studioSlug}/automacoes`, label: 'Automação', icon: MessagesSquare },
+    { path: `/admin/${studioSlug}/assinatura`, label: 'Assinatura', icon: CreditCard },
   ];
 
   const isActive = (path) => location.pathname === path;
@@ -38,7 +39,7 @@ export default function Navigation() {
             <Link
               key={path}
               to={path}
-              className={`flex items-center gap-2 px-6 py-4 border-b-2 transition-all text-xs font-black uppercase tracking-wider ${
+              className={`flex items-center gap-2 px-4 py-4 border-b-2 transition-all text-xs font-black uppercase tracking-wider lg:px-5 ${
                 isActive(path)
                   ? 'border-slate-900 text-slate-900 bg-white/80'
                   : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50'

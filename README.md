@@ -7,12 +7,14 @@ O Zello Agenda reúne link público de reservas, agenda inteligente, gestão de 
 ## Principais módulos
 
 - **Home comercial**: apresentação do produto em `/`.
+- **Planos e cadastro**: venda por assinatura em `/planos` e criação de estúdio em `/cadastro`.
 - **Link público**: reserva online em `/:slug`.
 - **Dashboard**: KPIs, checklist de ativação e roteiro de demo.
 - **Operação**: branding, horários, serviços, profissionais e comissões.
 - **Agenda**: agendamentos, clientes, histórico, status e WhatsApp.
 - **Automação**: confirmação, lembrete, pós-atendimento e recuperação.
 - **Financeiro**: faturamento, previsão, comissões, líquido e CSV.
+- **Assinatura**: status do plano, trial e checkout em `/admin/:slug/assinatura`.
 
 ## Rodar localmente
 
@@ -26,9 +28,10 @@ Crie um `.env` local com:
 ```bash
 VITE_SUPABASE_URL=
 VITE_SUPABASE_ANON_KEY=
+VITE_CHECKOUT_URL=
 ```
 
-Existe um modelo seguro em `.env.example`.
+Existe um modelo seguro em `.env.example`. `VITE_CHECKOUT_URL` é opcional e pode apontar para o checkout do gateway enquanto os planos ainda não tiverem `checkout_url` individual no Supabase.
 
 ## Build de produção
 
@@ -51,6 +54,8 @@ Rode as migrations em ordem:
 7. `20260603204000_public_client_dedup.sql`
 8. `20260603205000_public_booking_hardening.sql`
 9. `20260603210000_seed_studio_demo.sql` apenas para demo
+10. `20260603213000_add_saas_subscriptions.sql`
+11. `20260603214000_add_subscription_plan_management.sql`
 
 ## Documentação operacional
 

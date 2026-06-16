@@ -14,9 +14,13 @@ import Agenda from '@/pages/Agenda';
 import Reserva from '@/pages/Reserva';
 import Financeiro from '@/pages/Financeiro';
 import Automacoes from '@/pages/Automacoes';
+import Assinatura from '@/pages/Assinatura';
+import Planos from '@/pages/Planos';
+import CadastroAssinatura from '@/pages/CadastroAssinatura';
 import Login from '@/pages/Login'; 
 import PageNotFound from './lib/PageNotFound';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import SubscriptionGate from '@/components/SubscriptionGate';
 import Header from '@/components/Header';
 import Navigation from '@/components/Navigation';
 
@@ -77,34 +81,42 @@ function AppRoutes() {
       <Route path="/:slug" element={<ThemeProvider><Reserva /></ThemeProvider>} />
       <Route path="/:slug/login" element={<ThemeProvider><Login onLoginSuccess={(u, currentSlug) => navigate(`/admin/${currentSlug || 'studio-demo'}/dashboard`, { replace: true })} /></ThemeProvider>} />
       <Route path="/login" element={<Login onLoginSuccess={(u, currentSlug) => navigate(`/admin/${currentSlug || 'studio-demo'}/dashboard`, { replace: true })} />} />
+      <Route path="/planos" element={<Planos />} />
+      <Route path="/cadastro" element={<CadastroAssinatura />} />
       
       <Route path="/admin/:slug/dashboard" element={
         <ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />}>
-          <AdminLayout><Dashboard /></AdminLayout>
+          <AdminLayout><SubscriptionGate><Dashboard /></SubscriptionGate></AdminLayout>
         </ProtectedRoute>
       } />
 
       <Route path="/admin/:slug/servicos" element={
         <ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />}>
-          <AdminLayout><Servicos /></AdminLayout>
+          <AdminLayout><SubscriptionGate><Servicos /></SubscriptionGate></AdminLayout>
         </ProtectedRoute>
       } />
 
       <Route path="/admin/:slug/agenda" element={
         <ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />}>
-          <AdminLayout><Agenda /></AdminLayout>
+          <AdminLayout><SubscriptionGate><Agenda /></SubscriptionGate></AdminLayout>
         </ProtectedRoute>
       } />
 
       <Route path="/admin/:slug/financeiro" element={
         <ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />}>
-          <AdminLayout><Financeiro /></AdminLayout>
+          <AdminLayout><SubscriptionGate><Financeiro /></SubscriptionGate></AdminLayout>
         </ProtectedRoute>
       } />
 
       <Route path="/admin/:slug/automacoes" element={
         <ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />}>
-          <AdminLayout><Automacoes /></AdminLayout>
+          <AdminLayout><SubscriptionGate><Automacoes /></SubscriptionGate></AdminLayout>
+        </ProtectedRoute>
+      } />
+
+      <Route path="/admin/:slug/assinatura" element={
+        <ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />}>
+          <AdminLayout><Assinatura /></AdminLayout>
         </ProtectedRoute>
       } />
 

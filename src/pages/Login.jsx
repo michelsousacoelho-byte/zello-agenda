@@ -24,11 +24,33 @@ export default function Login({ onLoginSuccess }) {
         toast({ variant: "destructive", title: "Erro no acesso", description: "E-mail ou senha incorretos." });
       } else {
         toast({ title: "Acesso autorizado!", description: "Carregando painel..." });
+        const cadastroPendente = localStorage.getItem('zello_pending_signup');
+        if (cadastroPendente) {
+          const dados = JSON.parse(cadastroPendente);
+          const { data, error: erroCadastro } = await supabase.rpc('criar_estabelecimento_saas', {
+            p_nome_estudio: dados.nomeEstudio,
+            p_slug: dados.slug,
+            p_plano_id: dados.planoId || 'pro',
+          });
+
+          if (erroCadastro) throw erroCadastro;
+
+          localStorage.removeItem('zello_pending_signup');
+          const estudioSlug = data?.slug || dados.slug || slug || 'studio-demo';
+          if (onLoginSuccess) onLoginSuccess(null, estudioSlug);
+          return;
+        }
+
         const estudioSlug = slug || 'studio-demo';
         if (onLoginSuccess) onLoginSuccess(null, estudioSlug);
       }
     } catch (err) {
       console.error(err);
+      toast({
+        variant: "destructive",
+        title: "Não foi possível concluir o acesso",
+        description: err.message || "Tente novamente em instantes.",
+      });
     } finally {
       setLoading(false);
     }
@@ -123,6 +145,19 @@ export default function Login({ onLoginSuccess }) {
                 <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-500">
                   Use o acesso demo configurado no Supabase para apresentar o produto a um estúdio.
                 </p>
+              </div>
+
+              <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                <Link to="/planos" className="flex-1">
+                  <Button variant="outline" className="h-11 w-full rounded-xl border-slate-200 bg-white text-xs font-black uppercase tracking-wide text-slate-700 hover:bg-slate-50">
+                    Ver planos
+                  </Button>
+                </Link>
+                <Link to="/cadastro?plano=pro" className="flex-1">
+                  <Button variant="outline" className="h-11 w-full rounded-xl border-slate-200 bg-white text-xs font-black uppercase tracking-wide text-slate-700 hover:bg-slate-50">
+                    Criar conta
+                  </Button>
+                </Link>
               </div>
             </div>
           </div>

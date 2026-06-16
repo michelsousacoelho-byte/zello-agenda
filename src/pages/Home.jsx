@@ -6,6 +6,7 @@ import {
   BarChart3,
   CalendarCheck2,
   CheckCircle2,
+  CreditCard,
   MessageSquareText,
   Sparkles,
   WalletCards,
@@ -68,8 +69,14 @@ export default function Home() {
               Plataforma de agendamento, operação, financeiro e relacionamento para estúdios que querem vender mais horários sem perder controle.
             </p>
             <div className="mt-7 flex flex-col gap-3 sm:flex-row">
-              <Link to="/studio-demo/login">
+              <Link to="/planos">
                 <Button className="h-12 w-full rounded-xl bg-white px-6 text-xs font-black uppercase tracking-wide text-slate-950 hover:bg-slate-100 sm:w-auto">
+                  Ver planos
+                  <CreditCard className="ml-2 h-4 w-4" />
+                </Button>
+              </Link>
+              <Link to="/studio-demo/login">
+                <Button variant="outline" className="h-12 w-full rounded-xl border-white/25 bg-white/10 px-6 text-xs font-black uppercase tracking-wide text-white hover:bg-white/15 sm:w-auto">
                   Acessar demo
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
@@ -127,6 +134,12 @@ export default function Home() {
             <Button className="h-11 rounded-xl bg-slate-950 px-5 text-xs font-black uppercase tracking-wide text-white hover:bg-slate-800">
               Abrir painel
               <BarChart3 className="ml-2 h-4 w-4" />
+            </Button>
+          </Link>
+          <Link to="/cadastro?plano=pro">
+            <Button variant="outline" className="h-11 rounded-xl border-slate-200 bg-white px-5 text-xs font-black uppercase tracking-wide text-slate-950 hover:bg-slate-50">
+              Criar assinatura
+              <CreditCard className="ml-2 h-4 w-4" />
             </Button>
           </Link>
         </div>

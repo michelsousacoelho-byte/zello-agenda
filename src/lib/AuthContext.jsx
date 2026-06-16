@@ -12,8 +12,8 @@ export const AuthProvider = ({ children }) => {
   const mapearUsuarioComRole = (supabaseUser) => {
     if (!supabaseUser) return null;
 
-    // Captura a role customizada que injetamos via SQL no app_metadata
-    const roleCustomizada = supabaseUser.app_metadata?.role;
+    // Captura a role customizada vinda do painel Supabase ou do cadastro SaaS.
+    const roleCustomizada = supabaseUser.app_metadata?.role || supabaseUser.user_metadata?.role;
 
     return {
       ...supabaseUser,

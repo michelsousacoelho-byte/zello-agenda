@@ -7,6 +7,7 @@ Use este checklist antes de colocar o Zello Agenda na mão de um cliente.
 - Criar projeto Supabase de produção.
 - Configurar `VITE_SUPABASE_URL`.
 - Configurar `VITE_SUPABASE_ANON_KEY`.
+- Configurar `VITE_CHECKOUT_URL` se o checkout do gateway for único para todos os planos.
 - Nunca usar service role no frontend.
 - Confirmar domínio final do app.
 - Configurar variáveis no Vercel ou provedor equivalente.
@@ -19,6 +20,10 @@ Use este checklist antes de colocar o Zello Agenda na mão de um cliente.
 - Definir `app_metadata.role = "admin"` no usuário admin.
 - Confirmar que o estúdio tem `slug` único.
 - Validar policies públicas do link de reserva.
+- Conferir planos em `planos_assinatura`.
+- Configurar `checkout_url` nos planos, se cada plano tiver checkout próprio.
+- Confirmar que o estúdio demo tem assinatura `trial` ou `ativa`.
+- Confirmar que a troca de plano funciona em Admin > Assinatura.
 
 ## 3. Estúdio cliente
 
@@ -34,8 +39,11 @@ Use este checklist antes de colocar o Zello Agenda na mão de um cliente.
 ## 4. Validação funcional
 
 - Abrir home `/`.
+- Abrir planos `/planos`.
+- Abrir cadastro `/cadastro?plano=pro`.
 - Abrir login `/login`.
 - Entrar no painel admin.
+- Abrir Assinatura no painel.
 - Abrir link público `/:slug`.
 - Criar reserva pública.
 - Confirmar que a reserva aparece na Agenda.
